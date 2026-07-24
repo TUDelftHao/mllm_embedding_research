@@ -429,14 +429,24 @@ Embedding 评测几乎都围着这三问转；不同基准只是把考卷出得�
 
 **主指标**：Precision@1 / Recall@1（多数子任务是「一查询一正例」）。
 
-**MMEB-V2 榜单印象（2026 年初）**
+**实时榜**：[TIGER-Lab MMEB Leaderboard](https://huggingface.co/spaces/TIGER-Lab/MMEB-Leaderboard)（提交持续刷新）。
 
-| 排名 | 模型 | 得分 |
-|------|------|------|
-| 1 | [Qwen3-VL-Embedding-8B](https://arxiv.org/abs/2601.04720) | 77.8 |
-| 2 | [RzenEmbed-v2-7B](https://arxiv.org/abs/2510.27350) | 71.6 |
-| 3 | [seed-1.6-embedding](https://seed.bytedance.com/en/blog/built-on-seed1-6-flash-seed-1-6-embedding-launched) | 71.3 |
-| 4 | [Ops-MM-embedding-v1-7B](https://huggingface.co/OpenSearch-AI/Ops-MM-embedding-v1-7B) | 67.6 |
+**MMEB-V2 Top 10（Overall / All，公开对照表快照）**
+
+> 来源：[Qwen3-VL-Embedding-8B 模型卡](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B) 对 MMEB-V2 的重评对照表（VisDoc OOD 已更新）；分数为 **All（78 任务平均）**。活榜会继续漂移。
+
+| 排名 | 模型 | Size | All |
+|------|------|------|-----|
+| 1 | [Qwen3-VL-Embedding-8B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B) | 8B | **77.9** |
+| 2 | [Seed-1.6-embedding-1215](https://seed.bytedance.com/en/blog/built-on-seed1-6-flash-seed-1-6-embedding-launched) | — | 76.9 |
+| 3 | [IFM-TTE](https://huggingface.co/spaces/TIGER-Lab/MMEB-Leaderboard) | 8B | 74.1 |
+| 4 | [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) | 2B | 73.4 |
+| 5 | [RzenEmbed](https://arxiv.org/abs/2510.27350) | 8B | 72.9 |
+| 6 | [Ops-MM-embedding-v1](https://huggingface.co/OpenSearch-AI/Ops-MM-embedding-v1-7B) | 8B | 68.9 |
+| 7 | [VLM2Vec-V2](https://huggingface.co/papers/2507.04590) | 2B | 59.2 |
+| 8 | [GME-7B](https://huggingface.co/Alibaba-NLP/gme-Qwen2-VL-7B-Instruct) | 7B | 59.1 |
+| 9 | [GME-2B](https://huggingface.co/Alibaba-NLP/gme-Qwen2-VL-2B-Instruct) | 2B | 55.3 |
+| 10 | [VLM2Vec](https://proceedings.iclr.cc/paper_files/paper/2025/hash/04261fce1705c4f02f062866717d592a-Abstract-Conference.html) | 2B | 47.7 |
 
 **怎么读这个榜？**  
 总分高说明「通用匹配」强，但不自动等于：视频第一、文档第一、推理第一。看子任务表往往比看总分更有决策价值（例如视频看 [WAVE-7B](https://huggingface.co/tsinghua-ee/WAVE-7B)，文档看 ColQwen/Argus）。
@@ -447,8 +457,25 @@ Embedding 评测几乎都围着这三问转；不同基准只是把考卷出得�
 
 - **规模**：10 个数据集、16 个检索任务、约 **560 万** 候选项  
 - **覆盖**：图文检索、组合检索、知识密集检索等  
-- **指标**：局部 Recall@5、全局 Recall@50（候选池更大时更难）  
-- **基准主页**：[UniIR / M-BEIR](https://tiger-ai-lab.github.io/UniIR/) · **代表工作**：[MM-Embed](https://openreview.net/forum?id=vG8Mmp4OCP) 曾报 52.7 R@5  
+- **指标**：全局池上平均 **R@5**（Fashion200K / FashionIQ 用 R@10）  
+- **基准主页**：[UniIR / M-BEIR](https://tiger-ai-lab.github.io/UniIR/) · **代表工作**：[MM-Embed](https://openreview.net/forum?id=vG8Mmp4OCP)
+
+**M-BEIR Top 10（Global pool Avg R@5，论文报告）**
+
+> 来源：[MM-Embed](https://arxiv.org/html/2411.02571) Table 1 与 [UniIR](https://tiger-ai-lab.github.io/UniIR/)；设置为从 **5.6M 异构候选池**检索。无持续公开排行榜时，以论文横向对比为准。
+
+| 排名 | 模型 | 类型 | Avg R@5 |
+|------|------|------|---------|
+| 1 | [MM-Embed](https://openreview.net/forum?id=vG8Mmp4OCP) | MLLM bi-encoder + 持续文本微调 | **52.7** |
+| 2 | Mhard(NVEmb) | NV-Embed 系 + 模态感知硬负例 | 52.3 |
+| 3 | Mhard(LLaVa-P) | LLaVA-Next + 硬负例 | 51.9 |
+| 4 | [UniIR](https://tiger-ai-lab.github.io/UniIR/) (CLIPSF) | CLIP 特征融合 + 指令多任务 | 50.6 |
+| 5 | Mhard(CLIPSF) | CLIPSF + 硬负例 | 48.3 |
+| 5 | Mrand(LLaVa-P) | LLaVA-Next + 随机负例 | 48.3 |
+| 7 | Mrand(LLaVa-E) | LLaVA-Next（E 池化） | 47.9 |
+| 8 | Mrand(CLIPSF) | CLIPSF + 随机负例 | 47.4 |
+| 9 | Mrand(NVEmb) | NV-Embed 微调（随机负例） | 47.2 |
+| 10 | [UniIR](https://tiger-ai-lab.github.io/UniIR/) (BLIPFF) / BLIPFF | BLIP 系多任务 | ~45.5–46.8 |
 
 **和 MMEB 的差别（直觉）**：MMEB 更像「嵌入表示全能测试」；M-BEIR 更像「检索器在大型候选库上的实战」。
 
@@ -462,6 +489,24 @@ Embedding 评测几乎都围着这三问转；不同基准只是把考卷出得�
   - 强模型在 MMEB 上可到 **~77.8 R@1**  
   - 同一时代模型在 MR² 上可掉到 **~9.9 R@1**（约 **68 个点**的鸿沟）  
   - 最佳约 **30.68 nDCG@10**；加 GPT-5 重排后约 **45.90**  
+- **官方 Mini-Leaderboard**：[VectorSpaceLab/MR2-Bench](https://github.com/VectorSpaceLab/MR2-Bench)
+
+**MR²-Bench Top 10（Avg nDCG@10，官方 Mini-Leaderboard）**
+
+> 指标为 12 个子任务宏平均 nDCG@10。表中同时收录「原生多模态嵌入」与「文本嵌入 + 图像 caption」两条路线，便于对照。
+
+| 排名 | 模型 | 类型 | Avg nDCG@10 |
+|------|------|------|-------------|
+| 1 | [Seed-1.6-Embedding](https://seed.bytedance.com/en/blog/built-on-seed1-6-flash-seed-1-6-embedding-launched) | 多模态嵌入 | **30.68** |
+| 2 | [MM-Embed](https://openreview.net/forum?id=vG8Mmp4OCP) | 多模态嵌入 | 30.23 |
+| 3 | ReasonIR + Captions | 文本推理检索器 + 图注 | 25.72 |
+| 4 | BGE-Reasoner + Captions | 文本推理检索器 + 图注 | 25.35 |
+| 5 | [VLM2Vec-v2](https://huggingface.co/papers/2507.04590) | 多模态嵌入 | 23.72 |
+| 6 | Diver-Embed + Captions | 文本推理检索器 + 图注 | 23.59 |
+| 7 | [GME](https://huggingface.co/Alibaba-NLP/gme-Qwen2-VL-7B-Instruct) | 多模态嵌入 | 21.59 |
+| 8 | Qwen3 + Captions | 文本嵌入 + 图注 | 20.17 |
+| 9 | BGE-VL | 多模态嵌入 | 19.53 |
+| 10 | CLIP / BGE-M3 + Captions | 基线 | ~18.6–18.7 |
 
 ##### Demo：需要因果推理的检索
 
@@ -486,6 +531,22 @@ Embedding 评测几乎都围着这三问转；不同基准只是把考卷出得�
 - **四大任务**：Needle-in-a-Haystack（视觉定位）、多源推理、逻辑摘要、时序摘要  
 - **实验规模**：约 11 个模型（开源为主 + 闭源对照）  
 
+**MMLongEmbed Top（Avg P@1，论文 Table 3）**
+
+> 来源：[MMLongEmbed](https://arxiv.org/html/2606.14747) Table 3 全任务平均 Precision@1。官方评测集规模有限，下表按论文报告分数排序（不足 10 个时如实列出）。
+
+| 排名 | 模型 | Size | Avg P@1 |
+|------|------|------|---------|
+| 1 | [Ops-MM-embedding-v1-7B](https://huggingface.co/OpenSearch-AI/Ops-MM-embedding-v1-7B) | ~8B | **53.90** |
+| 2 | [Qwen3-VL-Embedding-8B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B) | 8B | 53.41 |
+| 3 | [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) | 2B | 52.31 |
+| 4 | Doubao-Seed-1.6（闭源） | — | 52.11 |
+| 5 | [Ops-MM-embedding-v1-2B](https://huggingface.co/OpenSearch-AI/Ops-MM-embedding-v1-2B) | 2B | 48.18 |
+| 6 | [Embed-RL-4B](https://huggingface.co/ZoengHouNaam/Embed-RL-4B) | 4B | 40.84 |
+| 7 | [Embed-RL-2B](https://huggingface.co/ZoengHouNaam/Embed-RL-2B) | 2B | 39.28 |
+| 8 | [GME-Qwen2-VL-7B](https://huggingface.co/Alibaba-NLP/gme-Qwen2-VL-7B-Instruct) | 7B | 24.63 |
+| 9 | [GME-Qwen2-VL-2B](https://huggingface.co/Alibaba-NLP/gme-Qwen2-VL-2B-Instruct) | 2B | 23.10 |
+
 ##### Demo：多模态「大海捞针」
 
 ```text
@@ -496,7 +557,7 @@ Embedding 评测几乎都围着这三问转；不同基准只是把考卷出得�
 考察: 超长交错图文里，关键信息是否仍能被嵌入/检索定位。
 ```
 
-**读完带走**：长上下文不是「上下文窗口写得大就行」；嵌入质量常随长度**可预测地下滑**。
+**读完带走**：长上下文不是「上下文窗口写得大就行」；嵌入质量常随长度**可预测地下滑**。同系列里 8B 相对 2B 提升往往很小（甚至在 Hard 子集更差），说明**训练策略与上下文建模**比单纯堆参数更关键。
 
 ---
 
@@ -505,6 +566,41 @@ Embedding 评测几乎都围着这三问转；不同基准只是把考卷出得�
 - 为 [ColPali](https://huggingface.co/vidore/colpali) / [ColQwen](https://huggingface.co/athrael-soju/colqwen3.5-4.5B-v3) 等「页当图像、多向量打分」路径服务  
 - **V1/V2**：ArxivQA、DocVQA、InfoVQA 等多文档类型  
 - **V3（2026）**：多语言；主指标 **NDCG@10**  
+- **实时榜**：[ViDoRe V3 · MTEB](https://mteb-leaderboard.hf.space/benchmark/ViDoRe(v3)) / [vidore-leaderboard](https://huggingface.co/spaces/vidore/vidore-leaderboard)
+
+**ViDoRe V3 Top 10（Mean Task / nDCG@10，2026-04-20 快照）**
+
+> 来源：[colqwen3.5-4.5B-v3 模型卡](https://huggingface.co/athrael-soju/colqwen3.5-4.5B-v3) 捕获的公开榜；活榜会随新提交变化。
+
+| 排名 | 模型 | Params | Mean (Task) |
+|------|------|--------|-------------|
+| 1 | [nemotron-colembed-vl-8b-v2](https://arxiv.org/html/2602.03992v2) | 8.7B | **63.42** |
+| 2 | webAI-ColVec1-9b | 9.4B | 63.00 |
+| 3 | webAI-ColVec1-4b | 4.5B | 62.22 |
+| 4 | tomoro-colqwen3-embed-8b | 8.0B | 61.59 |
+| 5 | nemotron-colembed-vl-4b-v2 | 4.8B | 61.54 |
+| 6 | [colqwen3.5-4.5B-v3](https://huggingface.co/athrael-soju/colqwen3.5-4.5B-v3) | 4.6B | 61.46 |
+| 7 | [Ops-Colqwen3-4B](https://huggingface.co/OpenSearch-AI) | 4.8B | 61.17 |
+| 8 | tomoro-colqwen3-embed-4b | 4.0B | 60.20 |
+| 9 | llama-nemotron-colembed-vl-3b-v2 | 4.4B | 59.79 |
+| 10 | [jina-embeddings-v4](https://huggingface.co/jinaai/jina-embeddings-v4) | 3.9B | 57.52 |
+
+**ViDoRe V1+V2 Top 10（Avg nDCG@5，同快照）**
+
+| 排名 | 模型 | Avg |
+|------|------|-----|
+| 1 | Ops-Colqwen3-4B | **84.9** |
+| 2 | nemotron-colembed-vl-8b-v2 | 84.8 |
+| 3 | nemotron-colembed-vl-4b-v2 | 83.9 |
+| 4 | colqwen3.5-4.5B-v3 | 83.7 |
+| 5 | llama-nemotron-colembed-vl-3b-v2 | 83.6 |
+| 6 | tomoro-colqwen3-embed-8b | 83.5 |
+| 7 | EvoQwen2.5-VL-Retriever-7B-v1 | 83.4 |
+| 8 | tomoro-colqwen3-embed-4b | 83.2 |
+| 9 | llama-nemoretriever-colembed-3b-v1 | 83.1 |
+| 10 | SauerkrautLM-ColQwen3-8b-v0.1 | 82.9 |
+
+> 另：[Argus-9B](https://arxiv.org/abs/2606.04300) 在 V1+V2 上报告 **86.0 NDCG@5**（OOD V2 提升明显），是否已完整入库活榜需以 [MTEB ViDoRe](https://mteb-leaderboard.hf.space/benchmark/ViDoRe(v3)) 为准。
 
 **和 DocVQA 的关系**：DocVQA 偏「给定页问答」；ViDoRe 偏「先在很多页里找到那一页」。做 PDF RAG，ViDoRe 往往比 COCO 更相关。
 
@@ -514,14 +610,56 @@ Embedding 评测几乎都围着这三问转；不同基准只是把考卷出得�
 
 - 经典 MTEB 是文本嵌入总榜；**v2** 把图文等模态纳入同一评价基础设施  
 - 统一检索/重排任务接口，便于横向对比与统计分析  
-- 适合问：「我的多模态模型，纯文本能力掉了多少？（对齐税）」
+- 适合问：「我的多模态模型，纯文本能力掉了多少？（对齐税）」  
+- **实时榜**：[MTEB Leaderboard](https://huggingface.co/spaces/mteb/leaderboard)
+
+**Multilingual / MMTEB Mean (Task) Top 10（公开对照快照）**
+
+> 来源：[Qwen3-VL-Embedding-8B 模型卡](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B) MMTEB 表 + 社区汇总；活榜（尤其 English / Multilingual 分区）分数会继续刷新。此处用 **Mean (Task)**，方便对照「多模态模型的文本对齐税」。
+
+| 排名 | 模型 | Size | Mean (Task) |
+|------|------|------|-------------|
+| 1 | [Qwen3-Embedding-8B](https://huggingface.co/Qwen/Qwen3-Embedding-8B) | 8B | **70.58** |
+| 2 | [Qwen3-Embedding-4B](https://huggingface.co/Qwen/Qwen3-Embedding-4B) | 4B | 69.45 |
+| 3 | [Gemini Embedding](https://ai.google.dev/gemini-api/docs/embeddings) | API | 68.37 |
+| 4 | [Qwen3-VL-Embedding-8B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B) | 8B | 67.88 |
+| 5 | [Qwen3-Embedding-0.6B](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B) | 0.6B | 64.33 |
+| 6 | [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) | 2B | 63.87 |
+| 7 | [multilingual-e5-large-instruct](https://huggingface.co/intfloat/multilingual-e5-large-instruct) | 0.6B | 63.22 |
+| 8 | [gte-Qwen2-7B-instruct](https://huggingface.co/Alibaba-NLP/gte-Qwen2-7B-instruct) | 7B | 62.51 |
+| 9 | Cohere-embed-multilingual-v3.0 | API | 61.12 |
+| 10 | [GritLM-7B](https://huggingface.co/GritLM/GritLM-7B) | 7B | 60.92 |
+
+> 社区后续还有 [KaLM-Embedding-Gemma3-12B](https://www.codesota.com/benchmarks/mteb) 等更高分提交（约 72+），读活榜时请以当前分区与任务集合为准。多模态旗舰 Qwen3-VL-Embedding-8B（67.88）相对专用文本版 Qwen3-Embedding-8B（70.58）低约 **2.7** 点，就是典型的「对齐税」。
 
 ---
 
 #### [Winoground](https://huggingface.co/datasets/facebook/winoground)：组合绑定的「显微镜」
 
 - 典型题：`"phone on a map"` vs `"map on a phone"`  
-- **随机基线 25%**；很强的视觉–语言系统也常在 **30–40%**；公开报道里 Apple DFN5B-H 约 **35.2%** 仍远未「解决」  
+- **随机基线**：Text/Image **25%**，Group **16.67%**；人类 Group 约 **85.5%**  
+- 很强的双塔嵌入也常在 Text **30–40%**、Group 远低于人类；公开报道里 [Apple DFN5B-H](https://huggingface.co/apple/DFN5B-CLIP-ViT-H-14-378) 约 **35.2%** 仍远未「解决」  
+- **注意**：生成式 VLM + 特殊推理协议（如 Componential Analysis / SimpleMatch）可以把分数抬得很高，但不等于标准嵌入相似度评测
+
+**Winoground 经典对照（标准配对打分）**
+
+> 以原论文 [Thrush et al., 2022](https://arxiv.org/abs/2204.03162) 为主，按 **Group Score** 排序；并补充后续常被引用的现代双塔结果。这不是持续更新活榜，但足以说明：组合绑定仍远未解决。参考线：Text/Image 随机 **25%**，Group 随机 **16.67%**，人类 Group **85.5%**。
+
+| 排名 | 模型 | Text | Image | Group | 备注 |
+|------|------|------|-------|-------|------|
+| — | MTurk Human | 89.5 | 88.5 | **85.5** | 人类上界 |
+| 1 | VinVL | 37.75 | 17.75 | **14.50** | 原论文较强 ITM 系 |
+| 2 | FLAVA ITM | 32.25 | 20.50 | 14.25 | 原论文 |
+| 3 | ViLLA large | 37.00 | 13.25 | 11.00 | 原论文 |
+| 4 | UNITER large | 38.00 | 14.00 | 10.50 | 原论文 |
+| 5 | UNITER base | 32.25 | 13.25 | 10.00 | 原论文 |
+| 6 | ViLT | 34.75 | 14.00 | 9.25 | 原论文 |
+| 7 | FLAVA Contrastive | 25.25 | 13.50 | 9.00 | 原论文 |
+| 8 | CLIP ViT-B/32 | 30.75 | 10.50 | 8.00 | 原论文双塔基线 |
+| 9 | ViLLA base | 30.00 | 12.00 | 8.00 | 原论文 |
+| 10 | LXMERT / 多数早期双塔 | ~19–24 | ~7 | ~4–5 | Group 常低于随机 |
+
+> 后续数据过滤更好的双塔（如 [Apple DFN5B-H](https://huggingface.co/apple/DFN5B-CLIP-ViT-H-14-378)）在公开综述中常报约 **35.2%** 的组合性相关分数，仍远低于人类；生成式 VLM + 特殊推理协议可显著抬分，但与「纯嵌入相似度」评测不可直接横向对比。
 
 ##### Demo
 
@@ -1695,5 +1833,5 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 > **报告生成日期**：2026 年 7 月 5 日（修订：2026 年 7 月 24 日；第 2–5 章扩写；并补充算力对照与缺失链接）
 > **覆盖时段**：2025 年 1 月 – 2026 年 7 月
 >
-> 本文基于公开研究文献整理；各工作名称已在正文中直接链接至论文 / 代码 / 官方页面。模型性能数据以对应论文或官方榜单为准。由于领域发展迅速，建议结合各基准最新排行榜获取实时数据。
+> 本文基于公开研究文献整理；各工作名称已在正文中直接链接至论文 / 代码 / 官方页面。第 3 章各榜 Top 10 为公开论文/模型卡快照（已标注指标与来源），**活榜会持续刷新**；请以 [MMEB Leaderboard](https://huggingface.co/spaces/TIGER-Lab/MMEB-Leaderboard)、[MTEB](https://huggingface.co/spaces/mteb/leaderboard)、[ViDoRe](https://mteb-leaderboard.hf.space/benchmark/ViDoRe(v3))、[MR²-Bench](https://github.com/VectorSpaceLab/MR2-Bench) 等官方页面为准。
 
