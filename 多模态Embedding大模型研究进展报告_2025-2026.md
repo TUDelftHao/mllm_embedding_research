@@ -563,6 +563,8 @@ Image B:   手机屏幕显示地图 App
 
 > 本章用「技术阅读 blog」的方式，把多模态 Embedding 训练里最常出现的概念拆开讲清楚。如果你刚入门，建议按顺序读：先理解「对比学习在干什么」，再看「四种训练范式差在哪」，最后才是合成数据、硬负样本、MRL、蒸馏这些工程技巧。
 
+> **代码与图片说明**：代码是为解释核心机制而写的 PyTorch 教学实现，省略了生产环境中的分布式通信、混合精度、异常处理和模型专属 processor 适配；论文示意图均保存在仓库 `assets/papers/`，图注链接到原论文或官方仓库。
+
 
 
 ### 4.0 先建立直觉：Embedding 训练到底在优化什么？
@@ -598,6 +600,48 @@ $$\mathcal{L}_{\text{InfoNCE}} = -\frac{1}{N}\sum_{i=1}^{N}\log\frac{\exp(\text{
 
 其中 $\tau$（温度）控制 Softmax 的「尖锐程度」：$\tau$ 越小，模型越被迫把正负例分得更开。CLIP 还做了对称版本：图找文 + 文找图，两边损失取平均。
 
+##### 代码示例：对称 InfoNCE
+
+下面是最小但完整的 PyTorch 写法。约定 `image_emb` 和 `text_emb` 的形状均为 `[batch_size, hidden_dim]`，且第 `i` 张图与第 `i` 段文本互为正例。
+
+```python
+import torch
+import torch.nn.functional as F
+
+
+def symmetric_info_nce(
+    image_emb: torch.Tensor,
+    text_emb: torch.Tensor,
+    temperature: float = 0.02,
+) -> torch.Tensor:
+    # 余弦相似度要求先做 L2 归一化。
+    image_emb = F.normalize(image_emb, dim=-1)
+    text_emb = F.normalize(text_emb, dim=-1)
+
+    # [B, D] @ [D, B] -> [B, B]
+    # 对角线 logits[i, i] 是正例，其余位置是 in-batch negatives。
+    logits = image_emb @ text_emb.T / temperature
+    labels = torch.arange(logits.size(0), device=logits.device)
+
+    image_to_text = F.cross_entropy(logits, labels)
+    text_to_image = F.cross_entropy(logits.T, labels)
+    return (image_to_text + text_to_image) / 2
+
+
+# 模拟 3 对图文。真实训练中这两个张量来自图像塔和文本塔。
+image_emb = torch.randn(3, 768, requires_grad=True)
+text_emb = torch.randn(3, 768, requires_grad=True)
+
+loss = symmetric_info_nce(image_emb, text_emb)
+loss.backward()
+```
+
+读代码时抓住三点：
+
+1. **正例由矩阵对角线定义**，所以 DataLoader 必须保证图文顺序严格对齐；
+2. **归一化后点积就是余弦相似度**，否则向量模长可能成为模型走捷径的方式；
+3. 分布式训练通常会先 `all_gather` 其他 GPU 的向量，再计算更大的相似度矩阵，以获得更多负例。
+
 **为什么大家总强调 Batch Size？**  
 InfoNCE 的负例主要来自同 batch。batch 越大，负例越多、越多样，学到的判别边界越稳。CLIP 用到 32,768，就是在用「海量 in-batch negatives」换对齐质量。
 
@@ -612,6 +656,48 @@ InfoNCE 有个隐式假设：同 batch 里除了正例以外都是负例。但�
 SigLIP 换了思路：不再做「在 N 个候选里选 1 个」的 Softmax，而是对每一个（图, 文）配对做独立的 Sigmoid 二分类——「这对是不是匹配？」
 
 $$\mathcal{L}_{\text{SigLIP}} = -\frac{1}{N}\sum_{i,j}\log\sigma(z_{ij} \cdot (t \cdot x_i^\top y_j + b))$$
+
+##### 代码示例：SigLIP 的逐对二分类
+
+SigLIP 不再把一整行看成一个多分类问题，而是把相似度矩阵中的每个格子看成独立二分类。对角线标签为 `+1`，非对角线为 `-1`。
+
+```python
+import torch
+import torch.nn.functional as F
+
+
+def siglip_loss(
+    image_emb: torch.Tensor,
+    text_emb: torch.Tensor,
+    logit_scale: torch.Tensor,
+    logit_bias: torch.Tensor,
+) -> torch.Tensor:
+    image_emb = F.normalize(image_emb, dim=-1)
+    text_emb = F.normalize(text_emb, dim=-1)
+
+    logits = image_emb @ text_emb.T
+    logits = logits * logit_scale.exp() + logit_bias
+
+    batch_size = logits.size(0)
+    labels = -torch.ones_like(logits)
+    labels.fill_diagonal_(1.0)
+
+    # -log(sigmoid(label * logit))
+    pairwise_loss = -F.logsigmoid(labels * logits)
+    return pairwise_loss.mean()
+
+
+B, D = 4, 768
+image_emb = torch.randn(B, D, requires_grad=True)
+text_emb = torch.randn(B, D, requires_grad=True)
+logit_scale = torch.tensor(0.0, requires_grad=True)
+logit_bias = torch.tensor(-10.0, requires_grad=True)
+
+loss = siglip_loss(image_emb, text_emb, logit_scale, logit_bias)
+loss.backward()
+```
+
+工程实现还会做 **loss 分块**：不用一次物化完整的 `[B, B]` 矩阵，而是按文本块或图像块计算，从而降低峰值显存。
 
 直觉对比：
 
@@ -674,10 +760,9 @@ $$\mathcal{L}_{\text{SigLIP}} = -\frac{1}{N}\sum_{i,j}\log\sigma(z_{ij} \cdot (t
 
 > 拿一个已经会看图、会理解指令的 MLLM（如 Qwen-VL、LLaVA），用对比学习把它「拧」成编码器。
 
-```text
-  [指令 + 图像/文本/视频] ──► MLLM ──► 取某个 token 的隐状态 ──► Embedding
-                                      （常取末尾特殊 token）
-```
+![VLM2Vec 使用 VLM 分别编码 Query 与 Target，并以最后一个 token 的隐状态计算对比损失。来源：VLM2Vec 论文 Figure 3。](assets/papers/vlm2vec-framework.png)
+
+*图 4-1：[VLM2Vec](https://arxiv.org/abs/2410.05160) 的训练框架。左、右两侧可以共享同一个 VLM；输入可分别是文本、图像或图文组合，最终都压缩为单向量。*
 
 - **代表**：[VLM2Vec](https://proceedings.iclr.cc/paper_files/paper/2025/hash/04261fce1705c4f02f062866717d592a-Abstract-Conference.html)、[UniME](https://dl.acm.org/doi/10.1145/3746027.3754845)、[MM-Embed](https://openreview.net/forum?id=vG8Mmp4OCP)、[Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720)
 - **关键技巧（读论文高频词）**：
@@ -688,6 +773,158 @@ $$\mathcal{L}_{\text{SigLIP}} = -\frac{1}{N}\sum_{i,j}\log\sigma(z_{ij} \cdot (t
   - **算力数量级**：开源 MLLM→Embedding 微调常见 **8×80GB GPU**；工业预训练/合成与 WAVE/UME-R1 等可达 **几十到上百卡**。详见 [§5.13](#513-训练--推理算力速查公开披露汇总)。
 
 > 适合：要统一分类 / VQA / 检索 / grounding、需要理解复杂指令的通用 Embedding。
+
+##### 代码示例：从 MLLM 的最后一个有效 token 提取向量
+
+以下代码省略了具体模型的图像预处理，只展示论文中最关键的 pooling 逻辑。不能直接使用 `hidden[:, -1]`，因为右侧 padding 会让最后位置落在 PAD token 上。
+
+```python
+import torch
+import torch.nn.functional as F
+
+
+def last_token_pool(
+    last_hidden_state: torch.Tensor,
+    attention_mask: torch.Tensor,
+) -> torch.Tensor:
+    # attention_mask: [B, L]，有效 token 为 1。
+    last_indices = attention_mask.sum(dim=1) - 1
+    batch_indices = torch.arange(
+        last_hidden_state.size(0),
+        device=last_hidden_state.device,
+    )
+    pooled = last_hidden_state[batch_indices, last_indices]
+    return F.normalize(pooled, dim=-1)
+
+
+def encode_multimodal(model, processor, samples, instruction: str):
+    # samples 可以包含文本、图像或二者组合；具体字段随模型而变化。
+    prompts = [
+        {
+            "instruction": instruction,
+            "text": sample.get("text"),
+            "image": sample.get("image"),
+        }
+        for sample in samples
+    ]
+    batch = processor(prompts, padding=True, return_tensors="pt")
+    batch = {k: v.to(model.device) for k, v in batch.items()}
+
+    outputs = model(**batch, output_hidden_states=True)
+    return last_token_pool(
+        outputs.hidden_states[-1],
+        batch["attention_mask"],
+    )
+```
+
+同一输入可以因为 instruction 不同得到不同向量。例如：
+
+```python
+retrieval_emb = encode_multimodal(
+    model, processor, samples,
+    instruction="Represent the input for image-text retrieval.",
+)
+classification_emb = encode_multimodal(
+    model, processor, samples,
+    instruction="Represent the image for food classification.",
+)
+```
+
+##### 代码示例：LoRA 微调与一个对比训练 step
+
+MLLM 通常不用全参数训练，而是在注意力层插入 LoRA。下面把「挂 LoRA → 编码 query/target → 算损失 → 更新」串起来：
+
+```python
+from peft import LoraConfig, get_peft_model
+import torch
+
+
+lora_config = LoraConfig(
+    r=16,
+    lora_alpha=32,
+    lora_dropout=0.05,
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
+    bias="none",
+)
+model = get_peft_model(model, lora_config)
+optimizer = torch.optim.AdamW(
+    (p for p in model.parameters() if p.requires_grad),
+    lr=2e-5,
+)
+
+
+def train_step(batch):
+    model.train()
+    optimizer.zero_grad()
+
+    query_emb = encode_multimodal(
+        model,
+        processor,
+        batch["queries"],
+        instruction=batch["query_instruction"],
+    )
+    target_emb = encode_multimodal(
+        model,
+        processor,
+        batch["targets"],
+        instruction="Represent the candidate for retrieval.",
+    )
+
+    loss = symmetric_info_nce(
+        query_emb,
+        target_emb,
+        temperature=0.02,
+    )
+    loss.backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+    optimizer.step()
+    return loss.detach()
+```
+
+真实多任务训练还会按任务类型切换 instruction，并使用采样器控制每个 batch 的数据来源，避免一个 batch 中混入定义不兼容的正负例。
+
+##### 代码示例：GradCache 的两阶段思路
+
+GradCache 的目标是让对比损失看到大 batch，同时不保留整个大 batch 的计算图。它不是简单的梯度累积：普通梯度累积的每个 micro-batch 仍只看自己的负例，GradCache 则先拿到**全局表示**，再求全局对比损失。
+
+```python
+# 教学伪代码：实际项目建议直接使用 GradCache 官方实现。
+chunks = split_large_batch(batch, chunk_size=4)
+
+# 阶段 A：无梯度编码所有小块，拼出全局表示。
+with torch.no_grad():
+    query_repr = torch.cat([encoder(c.query) for c in chunks])
+    target_repr = torch.cat([encoder(c.target) for c in chunks])
+
+# 只对表示求全局对比损失，并缓存 dL/dEmbedding。
+query_repr.requires_grad_(True)
+target_repr.requires_grad_(True)
+loss = symmetric_info_nce(query_repr, target_repr)
+query_grad, target_grad = torch.autograd.grad(
+    loss, [query_repr, target_repr]
+)
+
+# 阶段 B：逐块重新前向；用缓存的表示梯度反传到模型参数。
+optimizer.zero_grad()
+offset = 0
+for chunk in chunks:
+    q = encoder(chunk.query)
+    t = encoder(chunk.target)
+    size = q.size(0)
+
+    torch.autograd.backward(
+        tensors=[q, t],
+        grad_tensors=[
+            query_grad[offset:offset + size],
+            target_grad[offset:offset + size],
+        ],
+    )
+    offset += size
+
+optimizer.step()
+```
+
+代价是每个样本要编码两遍；收益是有效 batch 可以从几十扩大到数百乃至 1024。
 
 
 
@@ -709,17 +946,46 @@ $$\mathcal{L}_{\text{SigLIP}} = -\frac{1}{N}\sum_{i,j}\log\sigma(z_{ij} \cdot (t
 
 多向量方法换思路：
 
-```text
-页面截图 ──► VLM ──► 许多 patch 向量（不平均成一个）
-查询文本 ──► 许多 token 向量
-打分：MaxSim = 每个查询 token 找最匹配的文档 patch，再求和
-```
+![ColPali 将文档页编码成 patch 向量，将查询编码成 token 向量，再通过 MaxSim 做 late interaction。来源：ColPali 官方仓库与论文 Figure 1。](assets/papers/colpali-architecture.webp)
+
+*图 4-2：[ColPali](https://arxiv.org/abs/2407.01449) 架构。文档向量可离线计算；在线阶段只编码查询，并让每个查询 token 寻找最相关的页面 patch。*
 
 - **代表**：[ColPali](https://huggingface.co/vidore/colpali)、[ColQwen](https://huggingface.co/athrael-soju/colqwen3.5-4.5B-v3)、[Argus-Retriever](https://arxiv.org/abs/2606.04300)
 - **为什么强**：表格单元格、图注、栏位布局都能被某个 patch「盯住」。
 - **代价**：存储从「每页 1 个向量」变成「每页几十到几百个向量」。于是才有 Light-ColPali 的 token 合并、Argus 的低维 MoE 等压缩工作。
 
 > 适合：PDF / 扫描件 / 幻灯片 / 信息图等视觉文档检索（VDR）。
+
+##### 代码示例：MaxSim late interaction
+
+```python
+import torch
+import torch.nn.functional as F
+
+
+def maxsim_score(
+    query_tokens: torch.Tensor,   # [Bq, Lq, D]
+    document_patches: torch.Tensor,  # [Bd, Ld, D]
+) -> torch.Tensor:
+    query_tokens = F.normalize(query_tokens, dim=-1)
+    document_patches = F.normalize(document_patches, dim=-1)
+
+    # [Bq, Bd, Lq, Ld]：每个查询 token 对每个文档 patch 的相似度。
+    similarity = torch.einsum(
+        "qld,pkd->qplk",
+        query_tokens,
+        document_patches,
+    )
+
+    # 每个查询 token 只保留最匹配的文档 patch，再对查询 token 求和。
+    return similarity.max(dim=-1).values.sum(dim=-1)  # [Bq, Bd]
+
+
+scores = maxsim_score(query_embeddings, page_embeddings)
+top_pages = scores.topk(k=10, dim=-1).indices
+```
+
+直接物化四维张量在大 batch / 长页面下非常耗显存。生产实现通常用分块或 fused Triton kernel，在不创建完整 `[Bq, Bd, Lq, Ld]` 张量的情况下完成 `max + sum`。
 
 **四种范式怎么选（给初学者的速查）**
 
@@ -754,6 +1020,46 @@ $$\mathcal{L}_{\text{SigLIP}} = -\frac{1}{N}\sum_{i,j}\log\sigma(z_{ij} \cdot (t
 
 **初学者易错点**：合成数据不是越多越好。关键是「多样性 + 难例质量」。同一 caption 配多个风格图像（PolyGen）往往比单生成器刷量更有效。
 
+##### 代码示例：合成数据的「生成—自评估—精炼」管道
+
+下面的示例展示 [mmE5](https://arxiv.org/abs/2502.08468) 风格的控制流程。`mllm.generate` / `mllm.score` 是接口占位符，实际可接本地 VLM 或 API。
+
+```python
+def build_synthetic_pair(image, mllm, min_score=0.8):
+    draft = mllm.generate(
+        image=image,
+        prompt=(
+            "为该图像生成一个检索查询和一个目标描述；"
+            "两者语义一致，但措辞不要重复，并覆盖细粒度属性。"
+        ),
+    )
+
+    scores = mllm.score(
+        image=image,
+        query=draft["query"],
+        target=draft["target"],
+        criteria=["cross_modal_alignment", "fidelity", "difficulty"],
+    )
+
+    if min(scores.values()) < min_score:
+        draft = mllm.generate(
+            image=image,
+            prompt=(
+                "根据以下评分修正样本，删除幻觉，补足视觉事实，"
+                f"并提高检索难度：{scores}\n原样本：{draft}"
+            ),
+        )
+
+    return {
+        "instruction": "Retrieve the target that matches the query.",
+        "query": {"image": image, "text": draft["query"]},
+        "positive": {"text": draft["target"]},
+        "quality_scores": scores,
+    }
+```
+
+数据落盘时建议保留生成模型版本、prompt、质量分和来源图像 ID，后续才能追踪坏样本来自哪一步。
+
 #### 硬负样本：训练中最「值钱」的反例
 
 对比学习里，太简单的负例（蓝天 vs 狗）很快就分对了，梯度几乎为 0。真正拉高上限的是**看起来很像、其实不对**的样本。
@@ -776,6 +1082,45 @@ False Neg: 同一只狗另一角度   ← 其实也该算正例，必须过滤�
   让 MLLM 用 Yes/No 概率当「软相关分」：既能踢掉假负例，又能当蒸馏软标签。比死阈值更懂语义。
 3. **多轮检索管道**
   先粗召回一大池 → 再精打分过滤 → 再挑最难的进 batch。工业界很常见。
+
+![UniME 第二阶段先过滤假负例，再从剩余候选中选择硬负例。来源：UniME 论文 Figure 3。](assets/papers/unime-stage2-hard-negatives.png)
+
+*图 4-3：[UniME](https://arxiv.org/abs/2504.17432) 的硬负样本增强训练。斜线区域是假负例：它们虽然不是数据集标注的正例，却在语义上也正确，不能强行推远。*
+
+##### 代码示例：挖硬负例并过滤假负例
+
+```python
+import torch
+import torch.nn.functional as F
+
+
+@torch.no_grad()
+def mine_hard_negatives(
+    query_emb: torch.Tensor,       # [B, D]
+    candidate_emb: torch.Tensor,   # [N, D]
+    positive_ids: torch.Tensor,    # [B]
+    judge_scores: torch.Tensor,    # [B, N]，MLLM Judge 的相关性分数
+    top_k: int = 8,
+    false_negative_threshold: float = 0.8,
+) -> torch.Tensor:
+    query_emb = F.normalize(query_emb, dim=-1)
+    candidate_emb = F.normalize(candidate_emb, dim=-1)
+    similarity = query_emb @ candidate_emb.T
+
+    # 已知正例不能被选为负例。
+    row = torch.arange(query_emb.size(0), device=query_emb.device)
+    similarity[row, positive_ids] = -torch.inf
+
+    # Judge 认为高度相关的候选可能是假负例，也排除。
+    similarity = similarity.masked_fill(
+        judge_scores >= false_negative_threshold,
+        -torch.inf,
+    )
+
+    return similarity.topk(k=top_k, dim=-1).indices
+```
+
+没有 MLLM Judge 时，可以先用「正例相似度差值 + 人工规则」过滤，但要定期抽样检查：**最相似的负例通常也是最容易标错的负例**。
 
 
 
@@ -809,6 +1154,39 @@ False Neg: 同一只狗另一角度   ← 其实也该算正例，必须过滤�
 
 **你可以这样向同事解释 MRL**：不是训练 5 个模型，而是训练 1 个「从头到尾信息密度递减有序」的向量。
 
+##### 代码示例：同时监督多个前缀维度
+
+```python
+import torch
+import torch.nn.functional as F
+
+
+def matryoshka_info_nce(
+    query_emb: torch.Tensor,
+    target_emb: torch.Tensor,
+    dimensions=(128, 256, 512, 1024),
+    temperature=0.02,
+) -> torch.Tensor:
+    losses = []
+
+    for dim in dimensions:
+        # 截取前缀后必须重新归一化。
+        q = F.normalize(query_emb[:, :dim], dim=-1)
+        t = F.normalize(target_emb[:, :dim], dim=-1)
+        logits = q @ t.T / temperature
+        labels = torch.arange(q.size(0), device=q.device)
+        losses.append(
+            0.5 * (
+                F.cross_entropy(logits, labels)
+                + F.cross_entropy(logits.T, labels)
+            )
+        )
+
+    return torch.stack(losses).mean()
+```
+
+如果所有维度等权，小维度有时会拖累全维性能。实践中常给大维度更高权重，或按训练阶段逐步加入更短前缀。
+
 ---
 
 
@@ -817,11 +1195,68 @@ False Neg: 同一只狗另一角度   ← 其实也该算正例，必须过滤�
 
 蒸馏的核心不是抄参数，而是**抄行为**：
 
+![UniME 第一阶段用冻结的教师嵌入模型生成离线表示，通过 batch 内相似度分布把判别能力蒸馏给学生 LLM。来源：UniME 论文 Figure 2。](assets/papers/unime-stage1-distillation.png)
+
+*图 4-4：[UniME](https://arxiv.org/abs/2504.17432) 的文本判别知识蒸馏。教师向量可提前离线计算；学生只更新 LoRA，视觉编码器在这一阶段保持冻结。*
+
 - **[UniME](https://dl.acm.org/doi/10.1145/3746027.3754845) 阶段一**：教师是强文本嵌入模型 NV-Embed-v2。学生不必逐维模仿教师向量，而是让「batch 内相似度分布」用 KL 对齐——学会「谁和谁该像」。
 - **[Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720) 阶段三**：先把 Reranker（会细看 query-doc）的判断力，蒸馏回双塔/单向量 Embedding，让召回模型也变「眼尖」。
 - **[xVLM2Vec](https://arxiv.org/abs/2503.09313)**：自蒸馏把单语能力迁到多语言，少依赖昂贵多语标注。
 
 **给初学者的比喻**：教师像资深面试官，不要求学员背面试官的笔记原文，而要求学员对同一批候选人的「相对排序」与面试官一致。
+
+##### 代码示例：蒸馏 batch 内相似度分布
+
+逐维 MSE 要求教师和学生维度一致，也过度约束坐标系。下面改为对齐 `[B, B]` 的关系矩阵：只要求两者对「哪些样本更相似」看法一致。
+
+```python
+import torch
+import torch.nn.functional as F
+
+
+def relational_distillation_loss(
+    student_query: torch.Tensor,
+    student_target: torch.Tensor,
+    teacher_query: torch.Tensor,
+    teacher_target: torch.Tensor,
+    temperature: float = 0.05,
+) -> torch.Tensor:
+    student_query = F.normalize(student_query, dim=-1)
+    student_target = F.normalize(student_target, dim=-1)
+    teacher_query = F.normalize(teacher_query.detach(), dim=-1)
+    teacher_target = F.normalize(teacher_target.detach(), dim=-1)
+
+    # [B, B]：第 i 个 query 对 batch 内所有 target 的相对偏好。
+    student_logits = student_query @ student_target.T / temperature
+    teacher_logits = teacher_query @ teacher_target.T / temperature
+
+    teacher_prob = F.softmax(teacher_logits, dim=-1)
+    student_log_prob = F.log_softmax(student_logits, dim=-1)
+
+    # batchmean 使损失量级不随 batch size 线性增长。
+    return F.kl_div(
+        student_log_prob,
+        teacher_prob,
+        reduction="batchmean",
+    ) * (temperature ** 2)
+
+
+with torch.no_grad():
+    teacher_query = teacher_model(query_text)
+    teacher_target = teacher_model(target_text)
+
+student_query = student_model(query_text)
+student_target = student_model(target_text)
+loss = relational_distillation_loss(
+    student_query,
+    student_target,
+    teacher_query,
+    teacher_target,
+)
+loss.backward()
+```
+
+教师表示适合离线缓存；如果教师也在训练循环中实时前向，显存和吞吐成本会明显增加。
 
 ---
 
