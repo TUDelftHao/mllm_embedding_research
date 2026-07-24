@@ -1,0 +1,1264 @@
+# 多模态 Embedding 大模型研究进展报告（2025–2026）
+
+> 本报告系统梳理了 2025–2026 年间多模态 Embedding 大模型领域的最新研究进展，第 2–5 章均以技术阅读 blog 风格展开：数据集与评测、训练方法与代表模型，便于初入门读者循序理解。文中各工作名称均直接链接至论文 / 代码 / 官方页面。
+
+---
+
+## 目录
+
+1. [引言与领域概览](#1-引言与领域概览)
+2. [常用数据集](#2-常用数据集)
+3. [评估方法与基准](#3-评估方法与基准)
+4. [训练策略](#4-训练策略)
+5. [代表模型详解](#5-代表模型详解)
+6. [趋势与展望](#6-趋势与展望)
+
+---
+
+## 1. 引言与领域概览
+
+多模态 Embedding 模型旨在将不同模态（文本、图像、视频、音频等）的数据映射到统一的向量空间中，使得语义相似的跨模态数据在该空间中距离相近。这项技术是跨模态检索、多模态 RAG（检索增强生成）、视觉问答等应用的核心基础设施。
+
+2025–2026 年，该领域经历了从**双塔架构（CLIP-style）到 MLLM-based 统一嵌入模型**的范式转变。关键趋势包括：
+
+- **MLLM 成为主流骨干**：[Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)、[LLaVA-OneVision](https://llava-vl.github.io/blog/2024-08-05-llava-onevision/) 等被广泛用作 Embedding 模型的基座
+- **从双编码器到深度融合**：[Gemini Embedding 2](https://arxiv.org/abs/2605.27295) 等模型实现了任意交错的跨模态输入
+- **训练效率大幅提升**：合成数据、多轮对比学习、GradCache 等技术显著降低了训练成本
+- **推理时扩展维度（MRL）**：Matryoshka 表示学习成为标配，支持灵活的嵌入维度
+- **推理能力成为新前沿**：[MR²-Bench](https://arxivlens.com/paperview/details/mr-2-bench-going-beyond-matching-to-reasoning-in-multimodal-retrieval-4166-ffb0e88d) 等基准揭示了当前模型在推理层面的巨大不足
+
+---
+
+
+
+## 2. 常用数据集
+
+<a id="2-常用数据集"></a>
+
+> 本章用阅读 blog 的方式讲清：多模态 Embedding **用什么数据练、用什么数据考**。建议先建立「预训练 / 微调 / 评测」三分法，再按任务类型看具体数据集；每类都配了 Demo，方便对照论文里的样本格式。
+
+### 2.0 先分清三类数据：预训练、微调、评测
+
+入门时最容易把「训练集」和「榜单」混在一起。可以先记这张分工表：
+
+| 阶段 | 数据长什么样 | 要它干什么 | 典型例子 |
+|------|--------------|------------|----------|
+| **预训练** | 海量、偏脏、弱监督图文/多模态对 | 把空间大致摆正：图文能对上号 | LAION-5B、DataComp、DFN |
+| **微调 / 指令对齐** | 中等规模、任务格式清晰、常带 instruction | 学会分类、检索、VQA、组合检索等具体玩法 | MMEB 训练集、ShareGPT4V、CIRR |
+| **评测基准** | 规模可控、标签干净、协议固定 | 公平比谁强；尽量少用来「刷分训练」 | MS-COCO 测试集、MMEB OOD、MR²-Bench |
+
+**一条经验**：预训练看「量与覆盖」，微调看「任务多样性与难负例」，评测看「是否测到你真正关心的能力」（匹配 / 组合 / 推理 / 长上下文 / 文档）。
+
+```text
+网页图文海量对 ──► 预训练（对齐）──► 多任务微调（听指令）──► 各基准评测
+     ↑                                    ↑
+  LAION / DataComp / 合成数据         MMEB / CIRR / ViDoRe 训练子集
+```
+
+---
+
+### 2.1 预训练数据集：先把「模态对齐」学出来
+
+预训练几乎都是 **（图像/视频/…, 文本）弱监督配对**：来自网络 alt-text、维基说明、过滤后的爬虫语料。质量参差，但规模足够让对比学习找到粗对齐。
+
+| 数据集 | 规模 | 模态 | 一句话定位 |
+|--------|------|------|------------|
+| **[LAION-5B](https://laion.ai/blog/laion-5b/)** | 58.5 亿对 | 图文 | 开源大规模图文「燃料库」，CLIP 系常用 |
+| **[DataComp](https://www.datacomp.ai/)** | 128 亿对（含多档子集） | 图文 | 强调「数据筛选算法」本身可研究 |
+| **[CC3M](https://ai.google.com/research/ConceptualCaptions/) / [CC12M](https://github.com/google-research-datasets/conceptual-12m)** | 300 万 / 1200 万 | 图文 | 更干净的概念描述，常作中小规模实验 |
+| **[COYO-700M](https://github.com/kakaobrain/coyo-dataset)** | 7.47 亿对 | 图文 | 过滤更严的大规模开源替代 |
+| **[WIT](https://github.com/google-research-datasets/wit)** | 3760 万 | 图文（多语言） | 维基图文，适合多语言对齐 |
+| **[DFN](https://arxiv.org/abs/2309.17425)** | ~50 亿对（筛选后） | 图文 | Apple 路线：用过滤网络提纯数据 |
+| **[VLDA-HM](https://github.com/PKU-YuanGroup/LanguageBind)** | 1000 万 | 视频/红外/深度/音频/文本 | 语言为锚的多模态绑定语料 |
+| **[PolyGen](https://arxiv.org/abs/2602.01370) 合成** | 可扩展 | 图文 | 多生成器同题多图，2025 后很火 |
+
+#### 怎么读这些预训练集？
+
+**1. 规模不是唯一真相**  
+LAION-5B 很大，但噪声也大（错配、水印、色情/低质内容需过滤）。DataComp / DFN 的核心叙事是：**同样算力下，更好的筛选 > 盲目堆数据**。读论文时看到 “DFN-5B” 之类名字，重点看它的过滤策略，而不只是 “5B” 这个数字。
+
+**2. 弱监督配对长什么样**  
+一张图配一句（或几句）不一定完美的描述。训练目标通常是：配对当正例，同 batch 其他样本当负例。
+
+#### Demo：预训练图文对
+
+**LAION / CC3M 风格（弱监督）**
+
+```text
+[Image]  一只金毛犬在草地上追飞盘，阳光从左侧斜照。
+[Text]   "golden retriever catching a frisbee in a sunny park"
+
+特点: 描述大体对，但不保证完整、不保证无错配；靠规模平均掉噪声。
+```
+
+**WIT 多语言（同一图像，多语说明）**
+
+```text
+[Image]  埃菲尔铁塔夜景
+[en]     "The Eiffel Tower illuminated at night in Paris"
+[zh]     "巴黎埃菲尔铁塔的夜景灯光"
+[fr]     "La Tour Eiffel illuminée la nuit à Paris"
+
+用途: 学「跨语言共享视觉概念」——同一景象，不同语言描述应对齐到相近向量。
+```
+
+**PolyGen 合成（同一 caption，多生成器图像 = 多正例）**
+
+```text
+[Caption]  "a red ceramic mug on a wooden table, soft morning light"
+[Img-A]    SDXL-Turbo（偏写实）
+[Img-B]    SANA（偏插画）
+[Img-C]    SD2（偏摄影）
+→ A/B/C 都是该 caption 的正例；还可程序化生成「差一点就不对」的硬负例。
+```
+
+**初学者选型提示**
+
+| 你的目标 | 更合理的预训练数据起点 |
+|----------|------------------------|
+| 复现/小规模实验 | CC3M / CC12M |
+| 追开源大规模基线 | LAION 过滤子集、COYO、DataComp Medium/Large |
+| 强调数据质量 | DFN 思路或自建过滤 |
+| 多语言 | WIT + 多语言合成描述 |
+| 视频/更多模态 | VLDA-HM 及后续绑定类语料 |
+| 缺真实数据 | PolyGen / mmE5 等合成流水线 |
+
+---
+
+### 2.2 微调与评估数据集：按「任务形态」来记
+
+评测和微调数据按**输入输出形态**分类，比按名字死记更有用。
+
+#### 2.2.1 图像–文本检索（经典双塔考场）
+
+这是最老也最常用的设定：**文找图 / 图找文**。库里有很多图像（或很多句子），看正确答案能否排进 Top-K。
+
+| 数据集 | 规模 | 特点 |
+|--------|------|------|
+| **[MS-COCO](https://cocodataset.org/)** | ~12.3 万图，每图 5 句 | 通用场景「标准尺子」，论文几乎必报 |
+| **[Flickr30K](https://shannon.cs.illinois.edu/DenotationGraph/)** | ~3.1 万图，每图 5 句 | 更偏日常相册风格，常与 COCO 并列 |
+| **[ShareGPT4V](https://sharegpt4v.github.io/)** | ~10 万长描述 | GPT-4V 写的细粒度长 caption，利于长文本对齐 |
+| **[Urban1K](https://huggingface.co/datasets/BeichenZhang/Urban1k)** | 1000 张 | 城市场景长描述检索（Long-CLIP 发布） |
+| **[SugarCrepe](https://github.com/RAIVNLab/sugar-crepe)** | 自动构造硬负例 | 专门打「组合性」：属性绑错、关系颠倒 |
+
+**任务在算法里怎么跑？**
+
+```text
+文→图:  Encode(text) 与  Encode(所有图) 算相似度，看真图是否进 Top-K
+图→文:  Encode(image) 与  Encode(所有句) 算相似度，看真句是否进 Top-K
+```
+
+##### Demo：MS-COCO
+
+```text
+Image ID: 397133
+[Image]  一名女子站在网球场边，手持球拍准备发球。
+
+Captions（5 条都算正例）:
+  1. "A woman with a tennis racket about to serve."
+  2. "A female tennis player prepares to hit the ball."
+  3. "Woman standing on a court holding a racket."
+  4. "A tennis player in white preparing for a serve."
+  5. "Athlete with racket on outdoor tennis court."
+
+评测:
+  Text→Image: 用 Caption-1 去图库里找 Image 397133
+  Image→Text: 用图像去 caption 池里找上述正确描述之一
+主指标: Recall@1 / @5 / @10
+```
+
+##### Demo：ShareGPT4V（长描述）
+
+```text
+[Image]  咖啡馆室内：木质吧台、吊灯、窗边两人交谈
+
+[Long Caption]
+"The photo shows a cozy café interior with warm wooden furniture.
+A barista stands behind the counter preparing drinks, while two
+customers sit by a large window with laptops. Soft pendant lights
+hang from the ceiling, creating a relaxed afternoon atmosphere."
+
+和 COCO 短句的差别: 更长、更细、更像「段落」；能暴露模型对长文本的退化。
+```
+
+##### Demo：SugarCrepe（组合性硬负例）
+
+```text
+[Image]  一只猫坐在蓝色椅子上
+
+Positive:  "a cat sitting on a blue chair"
+Hard Neg:  "a blue cat sitting on a chair"   ← 颜色绑错对象
+Hard Neg:  "a chair sitting on a blue cat"   ← 主客体颠倒
+
+意义: 袋袋词（bag-of-words）模型容易被骗；真正理解组合关系才过关。
+```
+
+---
+
+#### 2.2.2 组合图像检索（Composed Image Retrieval）
+
+用户说的不是纯文本，而是：**参考图 + 修改说明 → 目标图**。更接近电商「找同款但换个颜色/款式」。
+
+| 数据集 | 规模 | 领域 |
+|--------|------|------|
+| **[CIRR](https://github.com/Cuberick-Orion/CIRR)** | ~2.1 万查询 | 真实场景开放域 |
+| **[FashionIQ](https://github.com/XiaoxiaoGuo/fashion-iq)** | ~7.7 万查询 | 服装属性修改 |
+| **[NIGHTS](https://github.com/princetonvisualai/nights)** | ~2 万图像对 | 人类感知相似度比较 |
+
+查询通常要**联合编码**参考图与修改文本（或先分别编码再融合）：
+
+```text
+q = Encode(Reference Image, Modification Text)
+在候选图库中检索 Target Image
+```
+
+##### Demo：CIRR
+
+```text
+[Reference]     一只棕色泰迪犬站在草地上
+[Modification]  "same dog, but sitting and wearing a red scarf"
+[Target]        同一只狗坐下并围红围巾
+
+难点: 要保留「是同一只狗」的身份，又要执行「坐下 + 红围巾」的编辑。
+```
+
+##### Demo：FashionIQ
+
+```text
+[Reference]  黑色圆领短袖 T 恤
+[Caption]    "is floral and has short sleeves"
+[Target]     花卉印花短袖上衣
+
+难点: 服装属性组合（领型、袖长、图案、材质）细且易混淆。
+```
+
+##### Demo：NIGHTS（哪张更像？）
+
+```text
+[Anchor]   日落海边剪影
+[Image A]  同一场景、曝光略不同     ← 人类判为更相似
+[Image B]  完全不同的雪山
+标签: A 比 B 更接近 Anchor
+
+用途: 学「人眼感知相似度」，而不只是像素级或标签级匹配。
+```
+
+---
+
+#### 2.2.3 知识密集 VQA 与视觉文档
+
+这类数据测的是：**能不能对着图/页面找到信息**，而不只是「图文像不像」。在 Embedding 设定里，常把「问题」编成 query，把「含答案的段落/页面/图像」编成候选文档。
+
+| 数据集 | 测什么 |
+|--------|--------|
+| **[WebQA](https://webqna.github.io/)** | 多模态网页证据问答 |
+| **[DocVQA](https://www.docvqa.org/)** | 文档页上的问答（表格、发票、表单） |
+| **[InfoVQA](https://www.docvqa.org/datasets/infographicvqa)** | 信息图（饼图、流程、海报）问答 |
+| **[VisualNews](https://github.com/FuxiaoLiu/VisualNews-Repository)** | 新闻图文，偏检索/事实相关 |
+| **[ViDoRe](https://huggingface.co/vidore)** | 视觉文档检索专项（V1/V2/V3） |
+
+##### Demo：DocVQA
+
+```text
+[Page Image]  扫描发票 PDF 页
+
+Q: "What is the total amount due?"
+A: "$1,245.00"
+
+Q: "Who is the vendor?"
+A: "Acme Supplies Ltd."
+
+Embedding 视角: query=问题（可含页图），正例=含答案的那一页或那段区域表示。
+```
+
+##### Demo：InfoVQA
+
+```text
+[Infographic]  "2024 Global EV Market Share" 饼图+柱状图
+Q: "Which country had the highest EV market share in 2024?"
+A: "China"
+
+难点: 要读懂版式与图例，不是只做自然照片描述。
+```
+
+##### Demo：ViDoRe（页级检索）
+
+```text
+[Query]   "What is the attention mechanism used in Transformer?"
+[Corpus]  大量论文/手册的【页面截图】（常不先 OCR）
+[Relevant] Attention Is All You Need 里含 Multi-Head Attention 图的那一页
+
+评分: ColPali/ColQwen 等多向量 MaxSim；主指标常见 NDCG@10
+```
+
+##### Demo：WebQA
+
+```text
+[Question]  "What color is the dome of the Florence Cathedral?"
+[Evidence]  维基页面截图 / 相关图片
+[Answer]    "The dome is covered in red terracotta tiles."
+
+特点: 答案依赖外部多模态证据，接近「检索增强」场景。
+```
+
+---
+
+#### 2.2.4 MMEB：把异构任务「翻译」成同一种嵌入作业
+
+[MMEB](https://www.emergentmind.com/topics/massive-multimodal-embedding-benchmark-mmeb)（随 [VLM2Vec](https://proceedings.iclr.cc/paper_files/paper/2025/hash/04261fce1705c4f02f062866717d592a-Abstract-Conference.html) 提出）的关键思想是：
+
+> 分类、VQA、检索、Grounding……表面不同，但都可以写成  
+> **`Instruction + Query → Embedding`，去靠近一个 Target Embedding**。
+
+| 元任务 | 大约多少套数据 | 代表 |
+|--------|----------------|------|
+| 分类 Classification | ~10 | ImageNet-1K, SUN397, Food101, CIFAR-100 |
+| 视觉问答 VQA | ~6 | OK-VQA, A-OKVQA, ScienceQA, TextVQA |
+| 跨模态检索 Retrieval | ~8 | MS-COCO, NIGHTS, VisualNews-t2i |
+| 视觉定位 Grounding | ~6 | RefCOCO, RefCOCO+, MSCOCO-Grounding |
+
+##### Demo：统一成「指令条件化」格式
+
+```text
+# 分类 —— Target 是类别名文本
+Instruction: "Represent the given image for classification"
+Query:       <寿司拼盘图像>
+Target:      "sushi"
+
+# VQA —— Target 是能回答问题的文本
+Instruction: "Find a passage that answers the question"
+Query:       <图像> + "How many people are in the photo?"
+Target:      "There are three people standing near the fountain."
+
+# 检索 —— Target 是匹配图像（或其表示）
+Instruction: "Retrieve an image that matches the given caption"
+Query:       "a dog running on the beach at sunset"
+Target:      <匹配图像>
+
+# Grounding —— Target 是区域/区域描述
+Instruction: "Represent the image region described by the caption"
+Query:       <图像> + "the red car on the left"
+Target:      <对应区域或描述>
+```
+
+**为什么这对初学者重要？**  
+一旦接受这种格式，你读 VLM2Vec / UniME / Qwen3-VL-Embedding 时，就不会被「他们怎么把分类也做成对比学习」卡住——**类别名、答案句、目标图，都只是另一种「正例文档」**。
+
+---
+
+### 2.3 章节小结：数据怎么选
+
+1. **先定能力再选数据**：只要图文召回 → COCO/Flickr；要改图检索 → CIRR/FashionIQ；要 PDF → ViDoRe/DocVQA；要通用多任务 → MMEB。  
+2. **训练别只喂评测集**：会过拟合榜单；预训练用大而滤噪的语料，微调用任务混合。  
+3. **Demo 里的「Hard Neg」值得收藏**：组合性、假负例、文档版式，是 2025–2026 拉开差距的地方。
+
+---
+
+## 3. 评估方法与基准
+
+<a id="3-评估方法与基准"></a>
+
+> 有了数据还不够——**怎么打分、考什么能力**，决定你会被榜单带着走，还是真正理解模型强弱。本章先讲指标直觉，再带读各大基准，最后总结 2025–2026 的评测共识。
+
+### 3.0 评测在回答哪三个问题？
+
+1. **找得到吗？**（召回）——正确答案有没有进 Top-K  
+2. **排得准吗？**（排序）——越相关是否越靠前  
+3. **泛化到哪？**（分布外 / 推理 / 长上下文）——换任务、换难度是否崩盘
+
+Embedding 评测几乎都围着这三问转；不同基准只是把考卷出得更偏某一问。
+
+---
+
+### 3.1 核心评估指标：用「搜狗」例子建立直觉
+
+假设库里有 1000 张图，其中只有 1 张是正确答案。模型给出一个排序列表。
+
+| 指标 | 含义（白话） | 常见设置 | 什么时候看它 |
+|------|--------------|----------|--------------|
+| **Recall@K** | Top-K 里有没有答案（有则 1，无则 0；多正例则算比例） | K=1,5,10,50 | 检索主指标；COCO 常报 R@1/5/10 |
+| **Precision@K** | Top-K 里有多少是对的 | MMEB 常用 **P@1** | 每个 query 通常一个硬正例时，P@1≈R@1 |
+| **nDCG@K** | 排序质量：相关的越靠前越好，且有位置折损 | K=10 很常见 | 多档相关性、文档检索（ViDoRe） |
+| **MRR** | 第一个正确答案排名的倒数的平均 | — | 很在意「第一条就对」 |
+| **mAP** | 多正例时的精度–召回综合 | 多标签 | 一图多标注等场景 |
+
+#### 小计算器：Recall@K 与 MRR
+
+```text
+正确文档排在第 3 名:
+  Recall@1 = 0
+  Recall@5 = 1
+  MRR      = 1/3 ≈ 0.33
+
+正确文档排在第 1 名:
+  Recall@1 = 1
+  MRR      = 1.0
+```
+
+#### nDCG 为什么「更严」？
+
+它不只问「进没进 Top-K」，还问「是不是排得靠前、相关性等级对不对」。两个模型都能 R@10=1，但一个把正解排第 1、一个排第 10，nDCG 会拉开差距——所以 **ViDoRe / 文档检索更爱 nDCG@10**。
+
+#### 读榜单时的坑
+
+- **K 不同不能横比**：R@1 和 R@50 差一个数量级很正常。  
+- **候选库规模不同不能横比**：库从 5K 扩到 5M，同一模型 R@1 会掉。  
+- **In-distribution vs OOD**：在训练见过的数据集上很高、换一套就掉，说明泛化虚高。
+
+---
+
+### 3.2 主要基准平台：一张「考纲」地图
+
+```text
+                    ┌─ 匹配能力广不广 ──► MMEB / M-BEIR / MTEB v2
+评测光谱 ──────────┼─ 文档页找不找得到 ──► ViDoRe
+                    ├─ 组合绑得对不对 ──► Winoground / SugarCrepe
+                    ├─ 会不会推理 ──► MR²-Bench
+                    └─ 长上下文崩不崩 ──► MMLongEmbed
+```
+
+---
+
+#### [MMEB](https://www.emergentmind.com/topics/massive-multimodal-embedding-benchmark-mmeb)：多模态嵌入的「高考总分」
+
+| 版本 | 来源 | 规模印象 | 新增什么 |
+|------|------|----------|----------|
+| **V1** | [VLM2Vec](https://proceedings.iclr.cc/paper_files/paper/2025/hash/04261fce1705c4f02f062866717d592a-Abstract-Conference.html), ICLR 2025 | 36 数据集，4 元任务 | 分类 / VQA / 检索 / Grounding；20 ID + 16 OOD |
+| **V2** | [VLM2Vec-V2](https://huggingface.co/papers/2507.04590), 2025.07 | ~78 任务 | 视频检索/定位/分类/问答、视觉文档 |
+| **V3** | 2026 | ~190 任务，16 元任务 | 音频、Agent（工具检索、GUI、记忆） |
+
+**主指标**：Precision@1 / Recall@1（多数子任务是「一查询一正例」）。
+
+**MMEB-V2 榜单印象（2026 年初）**
+
+| 排名 | 模型 | 得分 |
+|------|------|------|
+| 1 | [Qwen3-VL-Embedding-8B](https://arxiv.org/abs/2601.04720) | 77.8 |
+| 2 | [RzenEmbed-v2-7B](https://arxiv.org/abs/2510.27350) | 71.6 |
+| 3 | [seed-1.6-embedding](https://seed.bytedance.com/en/blog/built-on-seed1-6-flash-seed-1-6-embedding-launched) | 71.3 |
+| 4 | [Ops-MM-embedding-v1-7B](https://huggingface.co/OpenSearch-AI/Ops-MM-embedding-v1-7B) | 67.6 |
+
+**怎么读这个榜？**  
+总分高说明「通用匹配」强，但不自动等于：视频第一、文档第一、推理第一。看子任务表往往比看总分更有决策价值（例如视频看 [WAVE-7B](https://huggingface.co/tsinghua-ee/WAVE-7B)，文档看 ColQwen/Argus）。
+
+---
+
+#### [M-BEIR](https://huggingface.co/datasets/TIGER-Lab/M-BEIR)：偏「检索系统」的综合考场
+
+- **规模**：10 个数据集、16 个检索任务、约 **560 万** 候选项  
+- **覆盖**：图文检索、组合检索、知识密集检索等  
+- **指标**：局部 Recall@5、全局 Recall@50（候选池更大时更难）  
+- **基准主页**：[UniIR / M-BEIR](https://tiger-ai-lab.github.io/UniIR/) · **代表工作**：[MM-Embed](https://openreview.net/forum?id=vG8Mmp4OCP) 曾报 52.7 R@5  
+
+**和 MMEB 的差别（直觉）**：MMEB 更像「嵌入表示全能测试」；M-BEIR 更像「检索器在大型候选库上的实战」。
+
+---
+
+#### [MR²-Bench](https://arxivlens.com/paperview/details/mr-2-bench-going-beyond-matching-to-reasoning-in-multimodal-retrieval-4166-ffb0e88d)：从「长得像」到「想得通」
+
+- **定位**：首个强调**推理密集**的多模态检索基准（约 1,309 条精标查询）  
+- **考什么**：逻辑、空间、因果等——仅靠浅层外观相似度不够  
+- **关键数字**（务必记住数量级）：  
+  - 强模型在 MMEB 上可到 **~77.8 R@1**  
+  - 同一时代模型在 MR² 上可掉到 **~9.9 R@1**（约 **68 个点**的鸿沟）  
+  - 最佳约 **30.68 nDCG@10**；加 GPT-5 重排后约 **45.90**  
+
+##### Demo：需要因果推理的检索
+
+```text
+[Query Image]  水杯倾倒，水流向桌边
+[Query Text]   "Which image shows what happens next due to gravity?"
+[Candidates]
+  A. 水落在地板上形成水洼     ← 正解（物理因果）
+  B. 水杯被扶正且无水渍       ← 外观相关但违因果
+  C. 干净空桌面               ← 更像「结果被擦掉」
+
+浅层匹配模型易选 B/C；MR² 专门惩罚这种「像但不对」。
+```
+
+**读完带走**：只报 MMEB 的论文，可能高估了推理检索能力；MR² 是 2025–2026 最刺痛人的镜子。
+
+---
+
+#### [MMLongEmbed](https://arxiv.org/abs/2606.14747)：上下文一长就退化吗？
+
+- **定位**：长上下文多模态 Embedding（可到 **32K** token 量级）  
+- **四大任务**：Needle-in-a-Haystack（视觉定位）、多源推理、逻辑摘要、时序摘要  
+- **实验规模**：约 11 个模型（开源为主 + 闭源对照）  
+
+##### Demo：多模态「大海捞针」
+
+```text
+[Context]  拼接约 50 页幻灯片截图（16K–32K tokens）
+[Needle]   藏在第 37 页: "Project budget is $2.4M"
+[Query]    "What is the project budget mentioned in the slides?"
+
+考察: 超长交错图文里，关键信息是否仍能被嵌入/检索定位。
+```
+
+**读完带走**：长上下文不是「上下文窗口写得大就行」；嵌入质量常随长度**可预测地下滑**。
+
+---
+
+#### [ViDoRe](https://huggingface.co/vidore)：视觉文档检索专项
+
+- 为 [ColPali](https://huggingface.co/vidore/colpali) / [ColQwen](https://huggingface.co/athrael-soju/colqwen3.5-4.5B-v3) 等「页当图像、多向量打分」路径服务  
+- **V1/V2**：ArxivQA、DocVQA、InfoVQA 等多文档类型  
+- **V3（2026）**：多语言；主指标 **NDCG@10**  
+
+**和 DocVQA 的关系**：DocVQA 偏「给定页问答」；ViDoRe 偏「先在很多页里找到那一页」。做 PDF RAG，ViDoRe 往往比 COCO 更相关。
+
+---
+
+#### [MTEB v2](https://huggingface.co/blog/isaacchung/mteb-v2)：从纯文本榜到多模态接口
+
+- 经典 MTEB 是文本嵌入总榜；**v2** 把图文等模态纳入同一评价基础设施  
+- 统一检索/重排任务接口，便于横向对比与统计分析  
+- 适合问：「我的多模态模型，纯文本能力掉了多少？（对齐税）」
+
+---
+
+#### [Winoground](https://huggingface.co/datasets/facebook/winoground)：组合绑定的「显微镜」
+
+- 典型题：`"phone on a map"` vs `"map on a phone"`  
+- **随机基线 25%**；很强的视觉–语言系统也常在 **30–40%**；公开报道里 Apple DFN5B-H 约 **35.2%** 仍远未「解决」  
+
+##### Demo
+
+```text
+Caption A: "a phone on a map"
+Caption B: "a map on a phone"
+Image A:   手机放在纸质地图上
+Image B:   手机屏幕显示地图 App
+
+正确: (A,A) + (B,B)
+打乱: 交叉配对应被判错
+
+测的是: 关系/介词绑定，而不是「图里有没有 phone 和 map 这两个词」。
+```
+
+---
+
+### 3.3 评测发现总结（2025–2026 共识）
+
+1. **没有一家包打所有子任务**：[Gemini Embedding 2](https://arxiv.org/abs/2605.27295) 闭源综合强；开源总分常见 [Qwen3-VL-Embedding-8B](https://arxiv.org/abs/2601.04720) 领先，但视频、文档可能另有状元（如 [WAVE-7B](https://arxiv.org/abs/2509.21990)）。  
+2. **开源在匹配类任务上已极具竞争力**：小到 2B 级也可能在部分跨模态检索上打过闭源 API。  
+3. **组合推理仍难**：Winoground / SugarCrepe 证明「词都对、关系错」依然普遍。  
+4. **长上下文退化是系统性的**：MMLongEmbed 画出了随长度下滑的曲线。  
+5. **推理是最大短板**：MR² 相对 MMEB 的约 68pp 差距，说明当前嵌入仍偏浅层匹配。
+
+### 3.4 给初学者的「读榜清单」
+
+拿到一篇新论文的表格时，按顺序问：
+
+1. 主榜是 **MMEB 总分** 还是子任务？有没有 OOD？  
+2. 有没有报 **ViDoRe / 文档**？（做 RAG 必看）  
+3. 有没有碰 **MR² / Winoground**？（宣称「理解强」时必看）  
+4. 指标是 R@K 还是 nDCG？**K 和候选库多大**？  
+5. 多模态变强后，**纯文本 MTEB** 掉了多少？
+
+---
+
+## 4. 训练策略
+
+> 本章用「技术阅读 blog」的方式，把多模态 Embedding 训练里最常出现的概念拆开讲清楚。如果你刚入门，建议按顺序读：先理解「对比学习在干什么」，再看「四种训练范式差在哪」，最后才是合成数据、硬负样本、MRL、蒸馏这些工程技巧。
+
+
+
+### 4.0 先建立直觉：Embedding 训练到底在优化什么？
+
+把一张图、一段文字、一页 PDF、一段视频，分别压成一个（或一组）固定长度的向量，就叫 Embedding。训练的目标很朴素：
+
+> **语义相近的东西，向量要靠近；语义无关的东西，向量要远离。**
+
+检索时，只要算查询向量与库中向量的相似度（常用余弦相似度），就能把最相关的结果排到前面。所以训练不是教模型「生成答案」，而是教它**组织空间**：让「对的邻居」聚在一起。
+
+工业界把这件事做成对比学习：每个样本有一个正例（该匹配的），一堆负例（不该匹配的）。损失函数负责惩罚「正例不够近」和「负例不够远」。后面所有花活——换损失、换架构、造合成数据、挖硬负例——都是在更好地完成这件事。
+
+---
+
+
+
+### 4.1 核心损失函数：模型怎么学会「靠近 / 远离」
+
+
+
+#### InfoNCE（CLIP 族的标准答案）
+
+[CLIP](https://openai.com/research/clip) 把 InfoNCE 带进了图文对齐。用一个 batch 里的例子理解最直观：
+
+假设一个 batch 有 3 对图文：`(图1, 文1)`、`(图2, 文2)`、`(图3, 文3)`。对「图1」来说：
+
+- 正例只有 `文1`
+- 负例是同 batch 里的 `文2`、`文3`（以及分布式训练时其他 GPU 上的文本）
+
+模型先算图1与所有文本的相似度，再做 Softmax，目标是：**正例的概率尽量高**。公式写作：
+
+$$\mathcal{L}_{\text{InfoNCE}} = -\frac{1}{N}\sum_{i=1}^{N}\log\frac{\exp(\text{sim}(z_i^I, z_i^T) / \tau)}{\sum_{j=1}^{N}\exp(\text{sim}(z_i^I, z_j^T) / \tau)}$$
+
+其中 $\tau$（温度）控制 Softmax 的「尖锐程度」：$\tau$ 越小，模型越被迫把正负例分得更开。CLIP 还做了对称版本：图找文 + 文找图，两边损失取平均。
+
+**为什么大家总强调 Batch Size？**  
+InfoNCE 的负例主要来自同 batch。batch 越大，负例越多、越多样，学到的判别边界越稳。CLIP 用到 32,768，就是在用「海量 in-batch negatives」换对齐质量。
+
+> **读论文时常看到的细节**：训练收敛后 $\tau$ 往往掉到 ~0.01，余弦相似度大多挤在 0 附近，即便强匹配也很少超过 0.35–0.40。这不代表模型差，而是对比学习几何里的常态——真正重要的是**相对排序**，不是绝对分数。
+
+
+
+#### [SigLIP](https://www.emergentmind.com/topics/sigmoid-loss-for-language-image-pre-training-siglip)：把「多分类」改成「一对一判断」
+
+InfoNCE 有个隐式假设：同 batch 里除了正例以外都是负例。但现实中，batch 里可能碰巧出现另一张也很匹配的图——这叫**假负例（false negative）**。Softmax 会强迫它们互相竞争，训练信号被污染。
+
+SigLIP 换了思路：不再做「在 N 个候选里选 1 个」的 Softmax，而是对每一个（图, 文）配对做独立的 Sigmoid 二分类——「这对是不是匹配？」
+
+$$\mathcal{L}_{\text{SigLIP}} = -\frac{1}{N}\sum_{i,j}\log\sigma(z_{ij} \cdot (t \cdot x_i^\top y_j + b))$$
+
+直觉对比：
+
+
+|           | InfoNCE                            | SigLIP                   |
+| --------- | ---------------------------------- | ------------------------ |
+| 问题形式      | 在 batch 内做多分类                      | 对每个配对做是/否判断              |
+| 假负例       | 会互相抢概率                             | 不直接竞争，更宽容                |
+| 通信/内存     | 常需 all-gather，偏 $\mathcal{O}(N^2)$ | 更易扩展，接近 $\mathcal{O}(N)$ |
+| Batch 敏感度 | 很吃大 batch                          | 从小 batch 到 ~32K 都更稳      |
+
+
+**2025 年理论补全**（NeurIPS 2025）：[Bangachev 等人](https://arxivlens.com/paperview/details/global-minimizers-of-sigmoid-contrastive-loss-2478-72532172) 用 **(m, b_rel)-Constellations** 刻画 Sigmoid 对比损失的全局最小解，发现嵌入几何会出现相变（ETF 相 / 反足相 / 混合相），并提出相对偏置参数化（LRB-Sig）加速收敛。对初学者，记住一句即可：**SigLIP 不只是工程上更好训，其最优解的几何结构也正在被理论看清。**
+
+#### 其他常见损失：各管一类任务
+
+真实系统很少只用一种损失。按任务选型更常见：
+
+
+| 损失函数                                                                   | 它在优化什么                              | 什么时候用        | 代表工作                                                    |
+| ---------------------------------------------------------------------- | ----------------------------------- | ------------ | ------------------------------------------------------- |
+| **CoSENT**                                                             | 相似度分数的相对排序是否合理                      | STS（语义文本相似度） | [Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720)  |
+| **KL 散度**                                                              | 让学生分布贴近教师分布                         | 知识蒸馏、软标签对齐   | [UniME](https://dl.acm.org/doi/10.1145/3746027.3754845) |
+| **Jensen-Shannon**                                                     | 更对称的分布对齐                            | 软匹配分数蒸馏      | [UniME-V2](https://arxiv.org/abs/2510.13515)            |
+| **Triplet**                                                            | anchor-positive 近、anchor-negative 远 | 早期排序模型       | 经典度量学习                                                  |
+| **Listwise**                                                           | 一整页候选列表的排序质量                        | 训练重排序器       | Reranker 阶段                                             |
+| **[GCL](https://neurips.cc/virtual/2025/loc/san-diego/poster/116946)** | 任意模态在 mini-batch 内互相对比              | 不想构造严格三元组时   | NeurIPS 2025                                            |
+
+
+**一句话记忆**：检索主损失多用 InfoNCE/SigLIP；要「像老师一样打分」用 KL/JS；要「把列表排好」用 listwise。
+
+---
+
+
+
+### 4.2 四种训练范式：同一目标，四种「怎么把模态接到一起」
+
+可以把范式理解成四种「工厂流水线」。产品都是 Embedding，但车间布局不同。
+
+#### 范式一：双塔对比预训练（CLIP-style）
+
+```text
+  图像 ──► [图像编码器] ──► 向量_I ─┐
+                                    ├─► 对比损失（InfoNCE / SigLIP）
+  文本 ──► [文本编码器] ──► 向量_T ─┘
+```
+
+- **代表**：[CLIP](https://arxiv.org/abs/2103.00020)、[SigLIP](https://arxiv.org/abs/2303.15343)、[Jina CLIP v2](https://huggingface.co/jinaai/jina-clip-v2)、[nomic-embed-vision](https://huggingface.co/nomic-ai/nomic-embed-vision-v1)
+- **怎么训**：两个编码器互不看对方内部状态，只在最后用相似度对齐。
+- **为什么好用**：线上可以**离线算好**所有图像向量入库；查询来了只编码文本，再做向量检索。延迟低、吞吐高。
+- **硬伤**：模态之间没有深度交互。遇到「红围巾的狗 vs 坐着的狗」这类组合修改，或「phone on a map」这类语序敏感问题，双塔往往不够细。
+
+> 适合：大规模召回、延迟敏感、图文检索为主的业务。
+
+
+
+#### 范式二：MLLM 适配（把会聊天的多模态大模型，改造成会检索的编码器）
+
+2024–2026 年的主旋律。思路不是从零训 Embedding，而是：
+
+> 拿一个已经会看图、会理解指令的 MLLM（如 Qwen-VL、LLaVA），用对比学习把它「拧」成编码器。
+
+```text
+  [指令 + 图像/文本/视频] ──► MLLM ──► 取某个 token 的隐状态 ──► Embedding
+                                      （常取末尾特殊 token）
+```
+
+- **代表**：[VLM2Vec](https://proceedings.iclr.cc/paper_files/paper/2025/hash/04261fce1705c4f02f062866717d592a-Abstract-Conference.html)、[UniME](https://dl.acm.org/doi/10.1145/3746027.3754845)、[MM-Embed](https://openreview.net/forum?id=vG8Mmp4OCP)、[Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720)
+- **关键技巧（读论文高频词）**：
+  - **指令条件化**：同样一张图，加不同 instruction 会得到不同向量——「用于分类」和「用于检索」不再共用一个死板表示。
+  - **LoRA**：只训练低秩适配器（rank 常取 8–16），基座知识尽量保留，省显存也少灾难性遗忘。
+  - **GradCache**：对比学习想要大 batch，但 MLLM 显存吃紧。GradCache 把「前向算表征」和「反传算梯度」拆开缓存，用时间换有效 batch size。
+  - **多阶段训练**：先大规模对齐 → 再多任务精调 → 再蒸馏/合并，避免一步到位不稳定。
+  - **算力数量级**：开源 MLLM→Embedding 微调常见 **8×80GB GPU**；工业预训练/合成与 WAVE/UME-R1 等可达 **几十到上百卡**。详见 [§5.13](#513-训练--推理算力速查公开披露汇总)。
+
+> 适合：要统一分类 / VQA / 检索 / grounding、需要理解复杂指令的通用 Embedding。
+
+
+
+#### 范式三：原生多模态大模型（Native Multimodal）
+
+双塔是「先各自编码，再对齐」；MLLM-as-Embedder 是「借聊天模型当编码器」。原生路线更激进：
+
+> **从一开始就设计成深度融合**：文本、图像、视频、音频可以交错输入，在 Transformer 内部早期交互，最后输出统一向量。
+
+- **代表**：[Gemini Embedding 2](https://arxiv.org/abs/2605.27295)
+- **直观差异**：你可以丢进去「一段说明文字 + 两张图 + 一段音频」，模型在同一注意力栈里理解整段交错上下文，而不是先分别压成四个向量再拼接。
+- **代价**：训练数据、算力、工程复杂度都更高；开源可复现性通常弱于双塔 / MLLM 微调路线。
+
+
+
+#### 范式四：多向量检索（Late Interaction / ColBERT 风格）
+
+前面三种大多输出**一个向量**代表整段输入。文档检索有个痛点：一页 PDF 里表格、公式、小字标题挤在一起，压成单向量会丢细节。
+
+多向量方法换思路：
+
+```text
+页面截图 ──► VLM ──► 许多 patch 向量（不平均成一个）
+查询文本 ──► 许多 token 向量
+打分：MaxSim = 每个查询 token 找最匹配的文档 patch，再求和
+```
+
+- **代表**：[ColPali](https://huggingface.co/vidore/colpali)、[ColQwen](https://huggingface.co/athrael-soju/colqwen3.5-4.5B-v3)、[Argus-Retriever](https://arxiv.org/abs/2606.04300)
+- **为什么强**：表格单元格、图注、栏位布局都能被某个 patch「盯住」。
+- **代价**：存储从「每页 1 个向量」变成「每页几十到几百个向量」。于是才有 Light-ColPali 的 token 合并、Argus 的低维 MoE 等压缩工作。
+
+> 适合：PDF / 扫描件 / 幻灯片 / 信息图等视觉文档检索（VDR）。
+
+**四种范式怎么选（给初学者的速查）**
+
+
+| 你的场景              | 更优先考虑                |
+| ----------------- | -------------------- |
+| 海量图文召回、要极致速度      | 双塔                   |
+| 统一多任务、指令复杂        | MLLM-as-Embedder     |
+| 任意交错模态、闭源 API 可接受 | 原生多模态                |
+| PDF/文档页级精细检索      | 多向量 Late Interaction |
+
+
+---
+
+
+
+### 4.3 数据策略：没有好数据，损失设计再漂亮也白搭
+
+
+
+#### 合成数据：用生成模型「造对齐语料」
+
+真实图文对贵、脏、且长尾不足。2025 年后，合成数据从「凑数」变成「可打榜」：
+
+
+| 方法                                                   | 它怎么造数据                              | 你该记住的一点                                       |
+| ---------------------------------------------------- | ----------------------------------- | --------------------------------------------- |
+| **[mmE5](https://arxiv.org/abs/2502.08468)** ([代码](https://github.com/haon-chen/mmE5)) | MLLM 单轮合成 → 自评估 → 精炼 | 强调广度、跨模态对齐、高保真三条标准 |
+| **[PolyGen](https://arxiv.org/abs/2602.01370)**      | 多生成器（SD1.5/SD2/SDXL-Turbo/SANA）同题多图 | 多正例 + 程序化硬负例 + 课程调度；相对单源 SynthCLIP **+19.0%** |
+| **[Qwen3-VL](https://arxiv.org/abs/2601.04720) 流水线** | 用 Qwen3-VL-32B 自动标/写描述              | 规模到 **3 亿+**，支撑工业级预训练                         |
+
+
+**初学者易错点**：合成数据不是越多越好。关键是「多样性 + 难例质量」。同一 caption 配多个风格图像（PolyGen）往往比单生成器刷量更有效。
+
+#### 硬负样本：训练中最「值钱」的反例
+
+对比学习里，太简单的负例（蓝天 vs 狗）很快就分对了，梯度几乎为 0。真正拉高上限的是**看起来很像、其实不对**的样本。
+
+```text
+Query: "a brown dog running on grass"
+Positive: 棕色犬在草坪奔跑
+
+Easy Neg:  蓝天白云           ← 太简单，学不到东西
+Hard Neg:  黑色犬在草坪奔跑   ← 属性相近，值得学
+Hard Neg:  棕色犬坐在草地上   ← 动作不同，值得学
+False Neg: 同一只狗另一角度   ← 其实也该算正例，必须过滤！
+```
+
+2025–2026 的三类进阶做法：
+
+1. **[EGA](https://arxiv.org/abs/2506.02020)（腾讯 QQMM）**
+  不只看「负例有多像 query」，而是看**相对难度**：负例相对正例有多「抢戏」。越难分的，梯度放大越多。
+2. **[UniME-V2](https://arxiv.org/abs/2510.13515) 的 MLLM-as-a-Judge**
+  让 MLLM 用 Yes/No 概率当「软相关分」：既能踢掉假负例，又能当蒸馏软标签。比死阈值更懂语义。
+3. **多轮检索管道**
+  先粗召回一大池 → 再精打分过滤 → 再挑最难的进 batch。工业界很常见。
+
+
+
+#### 课程学习：别一上来就喂最难题
+
+- **渐进注入难负例**：早期先学粗对齐，再逐步加难，避免训练早期崩掉。
+- **多正例目标**：同一语义多个正样本一起拉近（合成多图、多标注）。
+- **两阶段过滤**：余弦召回 → 相关性过滤（只留「和正例差不多像、但又不是正例」的难负例）。
+
+---
+
+
+
+### 4.4 Matryoshka 表示学习（MRL）：一个模型，多种向量长度
+
+线上常有矛盾：维度越高通常越准，但存储/带宽越贵。MRL 的想法像套娃：
+
+> 训练时让向量的**前缀子向量**也各自有用。推理时若只要 512 维，直接截断前 512 维，不必重新训一个小模型。
+
+例如同时支持 128 / 256 / 512 / 1024 / 2048。实践里，[Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720) 从 2048 降到 1024，MRR 往往只掉 1–2%，存储和计算却近乎减半。
+
+
+| 方法                                                         | 会议             | 它在解决什么                       |
+| ---------------------------------------------------------- | -------------- | ---------------------------- |
+| **[SMEC](https://aclanthology.org/2025.emnlp-main.1332/)** | EMNLP 2025     | 序列化 MRL + 自适应选维 + 跨 batch 记忆 |
+| **[CSR](https://icml.cc/virtual/2025/oral/47166)**         | ICML 2025 Oral | 用稀疏编码替代传统 MRL，少重训            |
+| **[MIPIC](https://github.com/tmp0810/MIPIC)**              | ACL 2026       | 子矩阵对齐 + 管道 InfoNCE，强化各前缀质量   |
+| **Qwen3-VL MRL+QAT**                                       | 2026           | 截断维度的同时做量化感知训练               |
+| **MURE（RMRL）** | 2026 | 分辨率级 MRL，服务视觉文档（公开细节较少） |
+
+
+**你可以这样向同事解释 MRL**：不是训练 5 个模型，而是训练 1 个「从头到尾信息密度递减有序」的向量。
+
+---
+
+
+
+### 4.5 知识蒸馏：让小/快的模型，学会大/慢模型的「品味」
+
+蒸馏的核心不是抄参数，而是**抄行为**：
+
+- **[UniME](https://dl.acm.org/doi/10.1145/3746027.3754845) 阶段一**：教师是强文本嵌入模型 NV-Embed-v2。学生不必逐维模仿教师向量，而是让「batch 内相似度分布」用 KL 对齐——学会「谁和谁该像」。
+- **[Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720) 阶段三**：先把 Reranker（会细看 query-doc）的判断力，蒸馏回双塔/单向量 Embedding，让召回模型也变「眼尖」。
+- **[xVLM2Vec](https://arxiv.org/abs/2503.09313)**：自蒸馏把单语能力迁到多语言，少依赖昂贵多语标注。
+
+**给初学者的比喻**：教师像资深面试官，不要求学员背面试官的笔记原文，而要求学员对同一批候选人的「相对排序」与面试官一致。
+
+---
+
+
+
+## 5. 代表模型详解
+
+> 下面按「问题背景 → 方法怎么做 → 为什么有效 → 你该带走什么」来读每篇工作。数字会过时，但**方法动机**更耐读。
+
+
+
+### 5.1 [Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720)：工业级「统一多模态嵌入 + 重排」模板（阿里，2026.01）
+
+**它想解决什么**  
+开源界缺一个能同时覆盖图、文、视频、视觉文档，又带 Reranker、还能量化/截断维度的完整方案。Qwen3-VL-Embedding 基本按「能上线」的标准来做，发布即登顶 MMEB-V2（77.8）。
+
+**架构怎么理解**  
+骨干是 Decoder-only 的 Qwen3-VL（2B / 8B）。输入走聊天模板（system + user），模型像平时多模态对话那样读图读文，但训练目标不是继续写 token，而是把**序列末尾** `<|endoftext|>` **的隐状态**当作 Embedding。  
+可以把它想成：聊天模型本来会在最后一个位置「汇总前文」；现在我们显式监督这个汇总向量，让它适合检索。
+
+
+| 规格   | 2B              | 8B     |
+| ---- | --------------- | ------ |
+| 层数   | 28              | 36     |
+| 嵌入维度 | 2048            | 4096   |
+| 上下文  | 最大 32K          | 最大 32K |
+| 语言   | 继承 Qwen3-VL，30+ | 同左     |
+
+
+**三阶段训练（这是最值得精读的部分）**
+
+1. **阶段一：大规模对比预训练**
+  用海量弱监督 query–doc 对做广义 InfoNCE，混合正例、难负例、跨 batch 负例。目标：先把空间「摆正」。
+2. **阶段二：多任务精调**
+  不同任务换不同损失——检索用 InfoNCE、分类用对比、STS 用 CoSENT、重排用二分类交叉熵。同一套骨干，学会「听指令切换任务头」。
+3. **阶段三：蒸馏 + 权重合并**
+  把 Reranker 的细粒度判断用 KL 灌回 Embedding，再把阶段一/二权重合并，兼顾泛化与专精。
+
+**工程彩蛋**  
+
+- MRL + QAT：可截断、可量化  
+- 3 亿+ 合成数据  
+- 两阶段硬负挖掘：先余弦召回，再相关性过滤
+
+**性能速览（8B）**：Image CLS 74.2 / QA 81.1 / Retrieval 80.2 / Graphical Docs 92.3 / Video 67.1 / VisDoc 82.4。  
+也要看到**对齐税**：纯文本 MTEB 69.4，低于专用文本版 Qwen3-Embedding（74.3）约 5 个点——多模态能力通常要付一点单模态代价。
+
+模型入口：[Qwen3-VL-Embedding-8B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B) · [GitHub](https://github.com/QwenLM/Qwen3-VL-Embedding)
+
+**算力（公开信息）**：工业级三阶段训练细节未完全公开。同档 MLLM Embedding 微调常见 **8×A100/H100 (80GB)** + LoRA；官方给出推理参考——**2B 约需 ≥8GB 显存，8B 约需 ≥24GB**。合成数据阶段另需调用大规模 VLM（如 32B）做标注，算力远高于最终 Embedding 微调本身。
+
+**读完带走**：想做通用多模态 Embedding，优先抄它的「三阶段 + 指令 + MRL/QAT + 合成数据」配方，而不是只抄榜单分数。
+
+---
+
+
+
+### 5.2 [VLM2Vec](https://proceedings.iclr.cc/paper_files/paper/2025/hash/04261fce1705c4f02f062866717d592a-Abstract-Conference.html) / [VLM2Vec-V2](https://huggingface.co/papers/2507.04590)：给「MLLM→Embedding」定规矩的开山作
+
+**历史位置**  
+在它之前，大家也会微调 VLM 做检索，但缺少**统一任务格式 + 大规模基准**。VLM2Vec（ICLR 2025）把「怎么训」和「怎么评」（MMEB）一起立住了；V2（2025.07）再扩到视频与视觉文档。
+
+**方法白话版**  
+
+1. 选一个 VLM（Phi-3.5-V / LLaVA-1.6 / Qwen2-VL…）
+2. 所有任务写成：`Instruction + Query` → 向量，目标也是一个可嵌入的对象（类别名、答案句、目标图…）
+3. 用 InfoNCE 拉近配对；用 GradCache 硬上有效大 batch
+4. LoRA（rank=8）只改少量参数；原文设置约 2000 step、8×H100，τ=0.02
+
+**它教会社区的三件事**
+
+- **指令不是装饰**：去掉 instruction，性能可掉约 30%。因为没有指令，模型不知道「这张图的向量是用来分类还是用来检索」。  
+- **检索任务泛化最强**：用检索数据训，往往能迁移到分类/VQA 等。  
+- **绝对提升巨大**：相对当时方法常见 +10–20 个点；OOD 约 52.0% P@1。
+
+**后续**：[xVLM2Vec](https://arxiv.org/abs/2503.09313) 用自蒸馏把能力扩到多语言。
+
+**算力**：原文在 **8×H100** 上训练；LoRA + GradCache，全局 batch≈1024，约 2000 step。VLM2Vec-V2（Qwen2-VL-2B）在 8×H100 上约 **每 1k step ≈15 小时**。
+
+**读完带走**：如果你要复现「把开源 VLM 改成 Embedding」，先复现 VLM2Vec 的数据格式与 GradCache，再谈更花哨的损失。
+
+---
+
+
+
+### 5.3 [UniME](https://dl.acm.org/doi/10.1145/3746027.3754845) / [UniME-V2](https://arxiv.org/abs/2510.13515)：先借文本老师的「眼」，再挖难负例
+
+**问题意识**  
+直接在多模态数据上对比微调，MLLM 容易「看起来能检索，其实判别力虚」。UniME 认为：文本嵌入模型已经很会分辨细粒度语义，应该先把这本事蒸馏过来。
+
+**两阶段故事线**
+
+**阶段一：文本判别蒸馏**  
+
+- 冻住视觉编码器，主要调 LLM 部分  
+- 教师：NV-Embed-v2  
+- 对齐对象：batch 内相似度分布（KL），不是死磕向量数值  
+- 文本侧用简洁 prompt（如 summarize）把句子收成可对比表示
+
+**阶段二：硬负增强指令微调**  
+
+- 用相似度阈值干掉假负例  
+- 每个样本选 top-k「很像但不匹配」的难负例进损失
+
+
+| 配置                     | 分类   | VQA  | 检索   | 定位   | 总体   |
+| ---------------------- | ---- | ---- | ---- | ---- | ---- |
+| UniME (Phi3.5-V, 4.2B) | 42.5 | 18.3 | 40.5 | 59.9 | 40.3 |
+| UniME (LLaVA-1.6, 7B)  | 43.0 | 17.7 | 42.5 | 63.2 | 41.6 |
+
+
+（注：表中为论文报告期数字；后续榜单会被更新工作刷新。）
+
+**UniME-V2：让 MLLM 当裁判**  
+用 Yes/No token 概率输出软匹配分：  
+
+- 过滤假负例  
+- 当软标签做分布对齐  
+即使分辨率只有 336×336，也能在组合检索（SugarCrepe）上打出很强结果——说明**标签质量有时比分辨率堆料更重要**。
+
+**算力**：UniME 在 **8×A100 (80GB)** 上训练（DeepSpeed ZeRO-2 + GradCache）；阶段一文本蒸馏 batch≈768，约 1–2 小时（视骨干）；阶段二硬负微调累计 batch≈1024、约 1000 step。UniME-V2 在 **8×A800 (80GB)** 上、约 2000 step。
+
+代码：[UniME](https://github.com/deepglint/UniME) · [UniME-V2](https://github.com/GaryGuTC/UniME-v2) · 预印本：[arXiv:2504.17432](https://arxiv.org/abs/2504.17432)
+
+**读完带走**：数据脏时，先「借教师分布」再「挖真难负例」；V2 进一步说明可以用 MLLM 自己当更聪明的标注器。
+
+---
+
+
+
+### 5.4 [Gemini Embedding 2](https://arxiv.org/abs/2605.27295)：闭源原生融合的上限参考（Google，2026.05）
+
+**它和 CLIP 族差在哪**  
+CLIP/SigLIP：两个塔，后期用相似度对齐。  
+Gemini Embedding 2：**一个原生多模态骨干 + 双向注意力**，文本/图像/视频/音频/文档进同一空间（3072 维，MRL 可截到 768/1536）。
+
+**你可以想象的输入**
+
+```text
+"Compare this product photo" + [图A] + "with the unboxing clip" + [视频] + "and the hum of the motor" + [音频]
+→ 一个 3072 维向量
+```
+
+交错上下文在模型内部早期融合，而不是四个向量后拼接。
+
+**成绩单印象**：MS-COCO T→I R@1 62.9；Flickr30K R@1 89.1；MTEB 多语言 69.9；代码 84.0；VATEX NDCG@10 68.8。音频嵌入相对「ASR 再嵌」流水线可高约 +3.6 MRR@10。  
+前代 [Gemini Embedding (2025)](https://arxiv.org/abs/2503.07891) 偏强文本；V2 才是多模态跨越。
+
+**算力**：闭源，训练配置未公开；通过 Gemini API / Vertex AI 按量计费使用，适合「不自训、只调用」。
+
+**读完带走**：它是能力天花板与产品形态参考；开源侧更常走「MLLM 适配」，但设计理念（早期融合、交错输入、MRL）值得对齐。
+
+---
+
+
+
+### 5.5 [MM-Embed](https://openreview.net/forum?id=vG8Mmp4OCP)：通用多模态检索器的 ICLR 2025 答卷（NVIDIA / Waterloo）
+
+**任务设定**  
+在 [M-BEIR](https://huggingface.co/datasets/TIGER-Lab/M-BEIR)（10 数据集、16 任务、约 560 万候选）上把 MLLM 训成 bi-encoder：任意模态 query 检索任意模态候选。
+
+**三个关键设计**
+
+1. **模态感知硬负挖掘**：MLLM 常有「更爱某模态」的偏置；负例采样要按模态结构来，避免模型走捷径。
+2. **双向检索**：图→文、文→图、图→图等统一进同一框架。
+3. **Prompt-and-Reranking**：召回后，再用现成 MLLM 做提示式重排，把「生成式理解」临时借给排序。
+
+**结果**：M-BEIR 52.7 R@5（发表时 SOTA）；MTEB 60.3 nDCG@10，甚至超过纯文本前身 NV-Embed-v1（59.4）。  
+这是一个反直觉但重要的观察：**加好多模态，纯文本不一定掉点，有时反而升**——取决于训练是否把判别结构练正。
+
+**算力**：基于 NV-Embed / MLLM 微调路线，公开材料强调 M-BEIR 规模（~560 万候选）带来的评测与训练负担；复现同档 bi-encoder 微调通常需要 **多卡 80GB 级 GPU**（常见 8 卡量级）与 GradCache/大有效 batch。
+
+**读完带走**：通用检索器要同时处理「跨模态对齐」和「模态捷径」；重排可以是独立模块，不必一开始就端到端。
+
+---
+
+
+
+### 5.6 [E5-V](https://arxiv.org/abs/2407.12580)：只在文本上训练，却能做多模态嵌入
+
+**违反直觉的设定**  
+训练时**完全不用图文对**：拿掉视觉编码器和投影器，只用约 27.3 万 NLI 文本对 + 对比学习，QLoRA 微调 LLaMA-3 8B（约 1000 step，batch 768）。  
+推理时再把图像接回来。
+
+**为什么还能 work？**  
+关键在 prompt 把不同模态「说成同一种事」：
+
+```text
+图像侧: "Summary above image in one word:"
+文本侧: "Summary above sentence in one word:"
+```
+
+模型被明确要求按**意义**而非**像素/字符形态**来表示输入，模态鸿沟被指令「铺平」。视觉模块只要能把图读进 LLM 空间，嵌入几何就能复用文本侧学到的判别结构。
+
+**意义**  
+
+- 训练成本可降约 95%  
+- 启发后续 UniME「文本教师蒸馏」路线  
+- 提醒初学者：**对齐不一定要从海量图文对开始**，表示空间的结构迁移同样强大
+
+**算力**：极低——约 **27.3 万** NLI 对、QLoRA、batch 768、约 **1000 step**；单机多卡即可，相对完整多模态对比微调可降成本约 **~95%**。
+
+**读完带走**：先问「语义空间是否已在文本侧成型」，再问「要不要堆多模态对」。
+
+---
+
+
+
+### 5.7 [ColPali](https://arxiv.org/abs/2407.01449) / [ColQwen](https://huggingface.co/vidore/colqwen2-v1.0)：视觉文档检索的主流范式
+
+**痛点**  
+传统「OCR → 文本嵌入」会丢版式、表格线、图注位置；而单向量 VLM 又容易把一页压太狠。
+
+**方法核心（Late Interaction）**
+
+1. 把 PDF 页当**图像**送进 VLM
+2. 保留许多 patch 级向量（不池化成 1 个）
+3. 查询侧保留多 token 向量
+4. 用 **MaxSim** 打分：每个查询 token 找最匹配 patch，再聚合
+
+这就像开卷考试：不是把整本书摘要成一句话，而是允许每个考点去书里「指到具体段落」。
+
+**演进（ViDoRe V1 NDCG@5 印象）**
+
+
+| 模型                                               | 骨干            | 分数             | 年份   |
+| ------------------------------------------------ | ------------- | -------------- | ---- |
+| ColPali v1.3                                     | PaliGemma-3B  | 84.8           | 2024 |
+| ColQwen2 v1.0                                    | Qwen2-VL-2B   | 89.3           | 2025 |
+| Ops-ColQwen3-4B | Qwen3-VL-4B | 91.4 | 2026 |
+| [ColQwen3.5-4.5B-v3](https://huggingface.co/athrael-soju/colqwen3.5-4.5B-v3) | Qwen3.5-4B | 91.9 (V1+V2 均) | 2026 |
+| **[Argus-9B](https://arxiv.org/abs/2606.04300)** | Qwen3.5-VL-9B | **92.67**      | 2026 |
+
+
+**配套进展**  
+
+- [Light-ColPali/ColQwen2](https://aclanthology.org/2025.findings-acl.1003/)：token 合并，约 11.8% 内存仍留 98.2% 性能  
+- Argus：查询条件化 MoE，文档表示随 query 变，1024 维仍可 SOTA  
+- 模型汤、多阶段混合文本检索与视觉文档数据（约 77.6 万对）
+
+**算力**：ColPali 原文约 **8 GPU** 数据并行、LoRA、1 epoch；整组实验约 **1405 Mi250x GPU-hours**（单次训练量级约 **~40 GPU-hours**）。ColQwen2 等后续版本常用更大有效 batch（可达 256），在 **80GB H100** 上训练更从容；推理单卡（如 L4）即可做页级编码。
+
+生态：`colpali-engine`、Byaldi、ColiVara、fast-plaid；可接 Vespa / Qdrant / Elasticsearch / Milvus。
+
+**读完带走**：做文档 RAG，优先评估「页级多向量」；同时从第一天就规划存储预算。
+
+---
+
+
+
+### 5.8 [Jina CLIP v2](https://huggingface.co/jinaai/jina-clip-v2)：现代双塔的「多语言 + 长文本 + MRL」样板
+
+**定位**  
+约 0.9B 参数的 CLIP 式双编码器，89 种语言，服务「要稳、要快、要多语言」的生产检索。
+
+
+|      | 文本塔                     | 图像塔              |
+| ---- | ----------------------- | ---------------- |
+| 基座   | Jina-XLM-RoBERTa (561M) | EVA02-L14 (304M) |
+| 最大输入 | 8192 tokens             | 512×512          |
+| 输出   | 64–1024（MRL）            | 同左               |
+
+
+**三阶段由易到难**  
+
+1. 224→384px：短标题多语言对齐
+2. 384px：GPT-4V 长标题（约 120 万多语言）强化细粒度
+3. 512px：硬负例，抬文本辨别力
+
+MRL：1024→256（约 75% 压缩）时损失常 <1%。  
+局限也清晰：无深度融合，MMEB-V2 大约 55 分档，相对顶级 MLLM Embedding 低约 20 分——**双塔换效率，MLLM 换上限**。
+
+**算力**：双塔 ~0.9B，训练/推理成本显著低于 7B MLLM Embedding；适合中小集群与边缘部署。具体卡时未作为论文核心披露，但同规模 CLIP 微调通常 **数卡到 8 卡** 即可。
+
+**读完带走**：不是所有业务都需要 7B MLLM Embedding；多语言双塔 + MRL 仍是高性价比默认项。
+
+---
+
+
+
+### 5.9 [MuCo](https://arxiv.org/abs/2602.06393)：把对比学习做成「多轮对话」，七倍有效 batch
+
+**动机**  
+对比学习极吃 batch size，但 MLLM 显存贵。MuCo（2026.04）把一次训练组织成多轮对话式对比：在可接受的额外计算（≤3%）下，把有效 batch 放大约 **7 倍**。
+
+**两个读点**  
+
+- **渐进对比**：信息在多轮里累积，梯度信号更丰富  
+- **上下文重建**：多轮训练出的模型，评测时仍能对齐单轮基准协议
+
+**结果印象**：零样本 MuCo-7B 61.6 vs [mmE5](https://github.com/haon-chen/mmE5)-11B 的 58.6；微调后 73.6 P@1（发表时 MMEB 很高）。
+
+**算力**：设计目标就是在有限显存下放大有效 batch（约 **7×**，额外算力 ≤3%）；复现同档 7B MLLM 对比微调仍建议 **多卡 80GB**，但同等硬件上负例利用率更高。
+
+**读完带走**：有效负例数可以用「训练组织形式」换，不一定只能堆 GPU 卡数。
+
+---
+
+
+
+### 5.10 [ImageBind](https://github.com/facebookresearch/ImageBind) / [LanguageBind](https://github.com/PKU-YuanGroup/LanguageBind)：多模态「谁当锚点」的经典课
+
+**ImageBind（Meta, CVPR 2023）**  
+以**图像为锚**：图像–文本、图像–音频、图像–深度…成对训练后，文本与音频之间也能涌现对齐——哪怕从未成对出现。  
+直觉：大家都跟图像对齐了，彼此就像「通过共同朋友认识」。
+
+**LanguageBind（北大, ICLR 2024）**  
+改以**语言为锚**，其他模态对齐到冻结语言编码器；释放 VLDA-HM（约 1000 万）。视频检索上，可用更少数据打过强基线。
+
+**2025–2026 延伸**  
+
+- [MotionBind](https://bytez.com/docs/neurips/115690/paper)：人体运动序列  
+- RLBind：对抗不变，提鲁棒（公开资源较少）  
+- Contrastive Tensor Pre-training：张量损失联合多模态
+
+**算力**：ImageBind / LanguageBind 属较早的绑定预训练，规模小于如今 7B MLLM Embedding 微调；LanguageBind 强调「更少数据达到更强视频检索」，算力门槛相对友好。延伸工作 WAVE 等则显著抬高：见下表。
+
+**读完带走**：N 模态不必两两配对；选好锚点，对齐可以「传递」。
+
+---
+
+
+
+### 5.11 其他值得关注的模型（速通导读）
+
+
+| 模型 | 链接 | 你可以从它身上学什么 |
+|------|------|----------------------|
+| **RzenEmbed-v2-7B** | [论文](https://arxiv.org/abs/2510.27350) · [代码](https://github.com/360CVGroup/RzenEmbed) | 视觉文档子任务可以专项打到很深 |
+| **seed-1.6-embedding** | [官方博客](https://seed.bytedance.com/en/blog/built-on-seed1-6-flash-seed-1-6-embedding-launched) | 图像子任务很强，但 MR² 提醒：匹配 ≠ 推理 |
+| **WAVE-7B** | [论文](https://arxiv.org/abs/2509.21990) · [模型](https://huggingface.co/tsinghua-ee/WAVE-7B) | 文本/音频/视频统一，视频榜常年参考 |
+| **UME-R1** | [论文](https://arxiv.org/abs/2511.00405) · [代码](https://github.com/XMUDeepLIT/UME-R1) | 生成式嵌入 + RL（GRPO），小模型打出高性价比 |
+| **nomic-embed-vision-v1.5** | [HF](https://huggingface.co/nomic-ai/nomic-embed-vision-v1.5) | 与文本模型共享空间，轻量部署友好 |
+| **mmE5** | [论文](https://arxiv.org/abs/2502.08468) · [代码](https://github.com/haon-chen/mmE5) | 合成数据质量方法论 |
+| **QQMM-embed-v2** | [论文](https://arxiv.org/abs/2506.02020) | EGA：按相对难度放大难负梯度 |
+| **LaME** | [代码](https://github.com/PeppaWu/LaME) | 可学习 `[REASON]` token，往推理嵌入走 |
+| **GCL** | [NeurIPS](https://neurips.cc/virtual/2025/loc/san-diego/poster/116946) | 不强制三元组的通用对比 |
+| **U-MARVEL** | [论文](https://arxiv.org/abs/2507.14902) | 拆解 MLLM 检索到底吃哪些因素 |
+
+
+---
+
+
+
+
+### 5.13 训练 / 推理算力速查（公开披露汇总）
+
+<a id="513-训练--推理算力速查公开披露汇总"></a>
+
+> 下列数字来自各论文/官方文档的**公开配置**，便于建立数量级直觉。不同实验室的卡型（A100/A800/H100/H20/Mi250x）、是否 GradCache、是否 LoRA、数据规模都会让「墙钟时间」差很多；**不可直接横比「谁更省」到小数点**，但可以判断：这是「单机可玩」、还是「小集群」、还是「工业级大练」。
+
+| 工作 | 训练硬件（公开） | 关键配置印象 | 推理/部署印象 |
+|------|------------------|------------|---------------|
+| [VLM2Vec](https://arxiv.org/html/2410.05160) | **8×H100** | LoRA + GradCache，全局 batch≈1024，~2k step | 7B 级需单卡 24–48GB+ |
+| [VLM2Vec-V2](https://huggingface.co/papers/2507.04590) | **8×H100** | 2B 骨干约 **15h / 1k step** | 2B 更友好 |
+| [UniME](https://arxiv.org/abs/2504.17432) | **8×A100 80GB** | ZeRO-2；阶段一 ~1–2h；阶段二 ~1k step | 4–7B LoRA 可单卡推理 |
+| [UniME-V2](https://arxiv.org/abs/2510.13515) | **8×A800 80GB** | LoRA r=16，batch≈1024，~2k step | 336² 分辨率降低显存 |
+| [E5-V](https://arxiv.org/abs/2407.12580) | 低（文本 QLoRA） | ~27万对、batch 768、~1k step；成本约降 **95%** | 推理时再挂视觉塔 |
+| [ColPali](https://arxiv.org/abs/2407.01449) | **8 GPU**；总实验 ~**1405 Mi250x GPU-h** | LoRA r=32，1 epoch，单次训练 ~40 GPU-h 量级 | 单卡（如 L4）可编码 |
+| [mmE5](https://arxiv.org/abs/2502.08468) | **64×A100 40GB** | Llama-3.2-11B-Vision + LoRA r=8，1 epoch | 11B 推理需多显存或量化 |
+| [RzenEmbed](https://arxiv.org/abs/2510.27350) | **16×A800 80GB** | bf16 + grad checkpoint；两阶段数据 | 2B/7B 分档部署 |
+| [WAVE-7B](https://arxiv.org/abs/2509.21990) | 对齐 **128×H20**；主训 **192×H20 ≈36h / 1 epoch** | LoRA r=128，per-device batch=1，总 batch=192 | 7B Omni 骨干，显存偏高 |
+| [UME-R1](https://arxiv.org/abs/2511.00405) | SFT **2336 H20 GPU-h** + RL **1344 H20 GPU-h**（对照判别式 DUME 约 1487） | SFT ~5k step，batch 1024；RL ~11k 对 | 生成式嵌入推理更慢（需出 CoT） |
+| [Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720) | 训练细节未完全公开（工业级三阶段 + 3亿合成） | 对标：8×80GB 级 LoRA 微调常见 | **2B≥8GB / 8B≥24GB**（官方参考） |
+| [Gemini Embedding 2](https://arxiv.org/abs/2605.27295) | 未公开 | — | **API / Vertex AI** 按量 |
+| [MuCo](https://arxiv.org/abs/2602.06393) | 同档 7B 多卡；有效 batch ×7，额外算力 ≤3% | 用训练组织换负例数 | 与同骨干 MLLM Embedding 类似 |
+| [Jina CLIP v2](https://huggingface.co/jinaai/jina-clip-v2) | 双塔 ~0.9B，远低于 7B MLLM | 三阶段分辨率课程 | 消费级/中小 GPU 可服务 |
+| [CLIP](https://arxiv.org/abs/2103.00020) 原始预训练 | 大规模（数百 GPU 量级，历史配置） | batch 32768 | 推理很轻；预训练不可轻易复现 |
+
+**读表建议（给初入门同学）**
+
+1. **复现 VLM2Vec/UniME 级工作**：先准备 **8×80GB**（H100/A100/A800 一类），上 LoRA + GradCache。  
+2. **只想用、不想训**：优先 API（Gemini）或直接拉 HF 权重；注意 7B/8B 推理显存。  
+3. **预算极紧**：从 [E5-V](https://arxiv.org/abs/2407.12580) / [Jina CLIP v2](https://huggingface.co/jinaai/jina-clip-v2) / ColPali 小骨干入手。  
+4. **视频+音频统一（WAVE）或生成式推理嵌入（UME-R1）**：算力跳到 **百卡级或数千 GPU-hours**，属于另一档投入。  
+5. **合成数据流水线**（Qwen3-VL-32B 标数、GPT-4o 合成）：往往比「最后那次 Embedding 微调」更吃钱——算总账时别漏掉。
+
+
+### 5.12 章节小结：怎么读下一篇新论文
+
+遇到新的多模态 Embedding 工作，可以用五问快速「读透」：
+
+1. **范式**：双塔 / MLLM 适配 / 原生融合 / 多向量？
+2. **损失**：InfoNCE、SigLIP，还是任务混合损失？
+3. **数据**：真数据、合成、难负例、课程，各用到哪一层？
+4. **表示**：单向量还是多向量？是否 MRL/量化？
+5. **评测**：只看 MMEB 匹配，还是也看了 MR² / ViDoRe / 长上下文？
+
+把这五问答清，一篇方法文的主线通常就出来了。
+
+---
+
+
+
+## 6. 趋势与展望
+
+
+
+### 6.1 当前关键挑战
+
+1. **推理鸿沟**：[MR²-Bench](https://arxivlens.com/paperview/details/mr-2-bench-going-beyond-matching-to-reasoning-in-multimodal-retrieval-4166-ffb0e88d) 揭示的表面匹配（MMEB 77.8）与推理检索（9.9）之间的 68pp 差距，是当前最紧迫的问题。模型本质上仍依赖浅层特征匹配而非深层语义理解。
+2. **组合性理解**：[Winoground](https://huggingface.co/datasets/facebook/winoground) 分数（30–40%）表明模型对空间关系、属性关联的组合推理能力严重不足。
+3. **长上下文退化**：[MMLongEmbed](https://arxiv.org/abs/2606.14747) 发现上下文越长、性能越差的系统性衰变。
+4. **多模态对齐税**：增加模态支持通常伴随单一模态（尤其是纯文本）的性能下降。
+5. **存储效率**：多向量方法（[ColPali](https://huggingface.co/vidore/colpali) 族）虽然精度高，但每文档数十到数百个 patch 嵌入带来巨大存储压力。
+
+
+
+### 6.2 未来方向
+
+1. **推理增强嵌入**：[LaME](https://github.com/PeppaWu/LaME) 的可学习推理 token、[UME-R1](https://arxiv.org/abs/2511.00405) 的强化学习路径、推理时计算扩展（如 MR²-Bench 中 GPT-5 重排带来的 +15.22 nDCG@10）是解决推理鸿沟的三个有希望的方向。
+2. **生成式嵌入**：[UME-R1](https://arxiv.org/abs/2511.00405) 开辟的新范式——从判别式（对比学习）走向生成式（自回归嵌入生成），或可深度融合推理能力。
+3. **Agent 嵌入**：MMEB-V3 已加入 Agent 场景（工具检索、GUI 控制、记忆检索），嵌入模型需要理解交互上下文而非仅理解内容。
+4. **更大规模合成数据**：[Qwen3-VL](https://arxiv.org/abs/2601.04720)（3 亿+）和 [PolyGen](https://arxiv.org/abs/2602.01370) 的成功表明，高质量的合成数据流水线可以替代或补充昂贵的人工标注。
+5. **统一模态融合**：[Gemini Embedding 2](https://arxiv.org/abs/2605.27295) 的早期深度融合指向未来——不再需要独立的模态编码器和投影矩阵。
+6. **量化与压缩**：MRL + QAT 的组合正在成为标配，Int8 量化下损失可忽略不计。相关压缩工作还可参考 [SMEC](https://aclanthology.org/2025.emnlp-main.1332/)、[CSR](https://icml.cc/virtual/2025/oral/47166)、[MIPIC](https://github.com/tmp0810/MIPIC)。
+7. **代码/数学/科学领域的多模态嵌入**：当前模型在专业领域（数学图表、科学插图、化学结构）的嵌入质量还有很大提升空间。
+
+
+
+### 6.3 选型建议
+
+
+| 场景        | 推荐模型                                                                                                     | 理由                         |
+| --------- | -------------------------------------------------------------------------------------------------------- | -------------------------- |
+| 通用多模态检索   | [Qwen3-VL-Embedding-8B](https://arxiv.org/abs/2601.04720)                                                | MMEB-V2 SOTA，30+ 语言，MRL 支持 |
+| 文档/PDF 检索 | Ops-ColQwen3-4B / [Argus-9B](https://arxiv.org/abs/2606.04300) / [ColQwen](https://huggingface.co/vidore/colqwen2-v1.0) | ViDoRe SOTA，保留布局和视觉细节 |
+| 视频理解 | [WAVE-7B](https://arxiv.org/abs/2509.21990) | MMEB-Video SOTA |
+| 多语言（商用）   | [Gemini Embedding 2](https://arxiv.org/abs/2605.27295)                                                   | 综合最强闭源，支持全模态               |
+| 轻量化部署 | [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) / [nomic-embed-vision-v1.5](https://huggingface.co/nomic-ai/nomic-embed-vision-v1.5) | 小模型 + MRL，质量/成本权衡好 |
+| 文本为主+偶有图像 | [Jina CLIP v2](https://huggingface.co/jinaai/jina-clip-v2)                                               | 双塔架构成熟稳定，89 语言支持           |
+
+
+---
+
+> **报告生成日期**：2026 年 7 月 5 日（修订：2026 年 7 月 24 日；第 2–5 章扩写；并补充算力对照与缺失链接）
+> **覆盖时段**：2025 年 1 月 – 2026 年 7 月
+>
+> 本文基于公开研究文献整理；各工作名称已在正文中直接链接至论文 / 代码 / 官方页面。模型性能数据以对应论文或官方榜单为准。由于领域发展迅速，建议结合各基准最新排行榜获取实时数据。
+
