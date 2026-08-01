@@ -1,6 +1,6 @@
 # 多模态 Embedding 大模型研究进展报告（2025–2026）
 
-> 本报告系统梳理了 2025–2026 年间多模态 Embedding 大模型领域的研究进展。整合自两份既有文档（系统综述版 + 代表作深度解析版），并补充 2026 年中旬前值得关注的新工作。第 2–5 章以技术阅读 blog 风格展开：数据集与评测、训练方法与代表模型。文中各工作名称均直接链接至论文 / 代码 / 官方页面。
+> 本报告系统梳理了 2025–2026 年间多模态 Embedding 大模型领域的研究进展。整合自两份既有文档（系统综述版 + 代表作深度解析版），并补充 2026 年中旬前值得关注的新工作。第 2–5 章以技术阅读 blog 风格展开：数据集与评测、训练方法与代表模型；**第 6 章汇总开源训练框架/仓库与后训练上手路径**。文中各工作名称均直接链接至论文 / 代码 / 官方页面。
 
 ---
 
@@ -11,8 +11,9 @@
 3. [评估方法与基准](#3-评估方法与基准)
 4. [训练策略](#4-训练策略)
 5. [代表模型详解](#5-代表模型详解)
-6. [趋势与展望](#6-趋势与展望)
-7. [附录：两份原稿整合说明与新增文献](#7-附录两份原稿整合说明与新增文献)
+6. [开源训练框架与后训练上手](#6-开源训练框架与后训练上手)
+7. [趋势与展望](#7-趋势与展望)
+8. [附录：两份原稿整合说明与新增文献](#8-附录两份原稿整合说明与新增文献)
 
 ---
 
@@ -1904,11 +1905,193 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 
 
 
-## 6. 趋势与展望
+## 6. 开源训练框架与后训练上手
+
+> 面向「已有开源 Embedding 权重，要在业务/领域数据上做后训练（继续对比微调）」的读者。先选对仓库，再按最小闭环跑通：数据 → LoRA InfoNCE → 业务检索集评测。
+
+### 6.1 通用训练框架（优先看这些）
+
+| 框架 / 仓库 | 链接 | 模态重心 | 适合做什么后训练 | 上手成本 |
+|-------------|------|----------|------------------|----------|
+| **[ms-swift](https://github.com/modelscope/ms-swift)** | [Embedding 文档](https://github.com/modelscope/ms-swift/blob/main/docs/source_en/BestPractices/Embedding.md) · [Qwen3 示例](https://github.com/modelscope/ms-swift/tree/main/examples/train/embedding/qwen3) · [GME 脚本](https://github.com/modelscope/ms-swift/blob/main/examples/train/embedding/train_gme.sh) | 文本 + 多模态（官方已接 Qwen3 / Qwen3-VL / GME / GTE） | **生产向后训练首选**：LoRA/全参、`infonce`、多卡 DeepSpeed | 低 |
+| **[VLM2Vec](https://github.com/TIGER-AI-Lab/VLM2Vec)** | 训练示例：`experiments/public/train` | 图 / 视频 / 视觉文档 | 复现 MMEB 管线、自定义 DataLoader、指令对比学习 | 中 |
+| **[Tevatron 2.0](https://github.com/texttron/tevatron)** | [论文](https://arxiv.org/abs/2505.02466) | 文本为主，扩展多模态 | 大规模检索训练/评测统一管线；OmniEmbed 基线 | 中 |
+| **[FlagEmbedding](https://github.com/FlagOpen/FlagEmbedding)** | BGE / [BGE-VL](https://huggingface.co/collections/BAAI/megapairs-67c6bbe49c15a9e7a7c69d92) / [MegaPairs](https://github.com/VectorSpaceLab/MegaPairs) | 文本 + 图文（BGE-VL） | BGE 系微调与难负例挖掘；视觉检索可看 MegaPairs | 中 |
+| **[Sentence-Transformers](https://www.sbert.net/)** | 多模态 finetune 文档 | 文本 / 图 / 音视频（视模型） | API 友好、小规模实验；已支持加载部分 VL Embedding | 低 |
+| **[colpali-engine](https://github.com/illuin-tech/colpali)** | `pip install "colpali-engine[train]"` · [cookbook](https://github.com/tonywu71/colpali-cookbooks) | 视觉文档（多向量） | ColPali / ColQwen 族 LoRA 后训练 | 中 |
+| **[OpenCLIP](https://github.com/mlfoundations/open_clip)** / [big_vision](https://github.com/google-research/big_vision) | SigLIP / SigLIP 2 配置 | 双塔图文 | CLIP 系继续预训练/微调，偏吞吐与索引 | 中高 |
+
+> 说明：ms-swift 当前明确支持的是 **LLM/MLLM 系 Embedding**（含把任意 chat MLLM 用 `--task_type embedding` 改造成编码器）；**不覆盖经典 CLIP 双塔训练**。双塔请走 OpenCLIP / big_vision。
+
+### 6.2 代表模型自带训练仓库（按任务抄作业）
+
+| 工作 | 训练代码 | 数据公开度 | 备注 |
+|------|----------|------------|------|
+| [VLM2Vec / V2](https://github.com/TIGER-AI-Lab/VLM2Vec) | 完整 train + eval | **高**（MMEB-train 等） | 社区事实标准；GradCache + LoRA |
+| [UniME](https://github.com/deepglint/UniME) / [UniME-V2](https://github.com/GaryGuTC/UniME-v2) | V2 有完整训练脚本 | 中高 | 蒸馏 + 硬负例；基于 VLM2Vec/ms-swift 生态 |
+| [E5-V](https://github.com/kongds/E5-V) | 文本对 QLoRA 脚本 | **高** | 极低成本入门；验证「文本判别力迁移」 |
+| [mmE5](https://github.com/haon-chen/mmE5) | 合成 + 训练 | 中 | 学合成数据质量流水线 |
+| [RzenEmbed](https://github.com/360CVGroup/RzenEmbed) | 公开代码 | 中 | 视觉文档向 |
+| [UME-R1](https://github.com/XMUDeepLIT/UME-R1) | SFT + RL | 中 | 生成式推理嵌入；算力更高 |
+| [Embed-RL](https://github.com/ZoengHN/Embed-RL) | EG-RL 训练 | 中 | Reasoner–Embedder 解耦 |
+| [Qwen3-VL-Embedding](https://github.com/QwenLM/Qwen3-VL-Embedding) | 官方侧重推理/权重；**后训练推荐走 ms-swift** | 训练语料未完整公开 | 权重开源，配方可复用 |
+| [GME](https://huggingface.co/Alibaba-NLP/gme-Qwen2-VL-7B-Instruct) | 可用 [ms-swift train_gme.sh](https://github.com/modelscope/ms-swift/blob/main/examples/train/embedding/train_gme.sh) | 中高 | 融合模态合成思路可借鉴 |
+| [MM-Embed](https://huggingface.co/nvidia/MM-Embed) | 权重开源，完整混合训练包未全公开 | 中 | 可参考模态感知难负例设计 |
+| [Omni-Embed-Nemotron](https://huggingface.co/nvidia/omni-embed-nemotron-3b) | **训练代码未公开** | 中高（数据列表有） | 只适合当权重基线，不适合抄训练 |
+| ColPali / ColQwen | [illuin-tech/colpali](https://github.com/illuin-tech/colpali) | 中 | PDF/页级多向量后训练 |
+
+### 6.3 怎么选框架（决策表）
+
+| 你的目标 | 推荐起点 | 基座权重建议 |
+|----------|----------|--------------|
+| 业务域多模态 RAG / 图文检索，尽快出效果 | **ms-swift** + InfoNCE + LoRA | [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B)（显存友好）或 8B |
+| 对齐论文 / 刷 MMEB 子任务 | **VLM2Vec** | VLM2Vec-V2 或自选 Qwen2-VL/Qwen3-VL |
+| 纯 PDF / 扫描件检索 | **colpali-engine** | ColQwen2 / ColQwen3 系 |
+| 只要文本检索后训练 | ms-swift（Qwen3-Embedding）或 FlagEmbedding / SBERT | Qwen3-Embedding-0.6B/4B |
+| 大规模离线图库双塔 | OpenCLIP / SigLIP 2 | SigLIP 2 So400m/g |
+| 研究推理增强嵌入 | UME-R1 / Embed-RL | 对应论文骨干 |
+
+### 6.4 快速上手：用 ms-swift 后训练 Qwen3-VL-Embedding（推荐路径）
+
+下面是一条可在 **1–8×80GB GPU** 上跑通的最小闭环（默认 LoRA + InfoNCE）。细节以 [ms-swift Embedding 文档](https://github.com/modelscope/ms-swift/blob/main/docs/source_en/BestPractices/Embedding.md) 与 [examples/train/embedding/qwen3](https://github.com/modelscope/ms-swift/tree/main/examples/train/embedding/qwen3) 为准。
+
+#### Step 0：环境
+
+```bash
+pip install ms-swift -U
+pip install transformers -U deepspeed
+# 可选但强烈建议（加速注意力）
+pip install flash-attn --no-build-isolation
+```
+
+硬件经验：2B + LoRA 单卡 24–48GB 可试；有效 batch 靠 `gradient_accumulation`；对比学习仍吃大 batch，多卡更稳。
+
+#### Step 1：准备领域数据（JSONL）
+
+InfoNCE 最小样本（query–positive；负例可先靠 in-batch）：
+
+```json
+{"messages": [{"role": "user", "content": "<image>找出与描述匹配的商品图"}], "images": ["/data/q1.jpg"], "positive_messages": [[{"role": "user", "content": "红色陶瓷马克杯，木桌上，柔和晨光"}]]}
+{"messages": [{"role": "user", "content": "发票总金额是多少？"}], "positive_messages": [[{"role": "user", "content": "<image>"}], "positive_images": [["/data/invoice_p3.png"]]]}
+```
+
+有难负例时加上 `negative_messages` / `negative_images`（list-of-list）。规则摘要：
+
+- `messages` = anchor（query）
+- `positive_messages` 外层长度必须为 **1**
+- `<image>` 个数与 `images` / `positive_images` 对齐
+- 可用 `system` 写入任务 instruction（Qwen3 系会拼进 query）
+
+**数据量建议**：先 **3k–20k** 高质量对跑通；宁可少而难，也不要海量易负例。业务评测集务必 **与训练 query 隔离**。
+
+#### Step 2：启动后训练
+
+```bash
+export INFONCE_TEMPERATURE=0.07
+export INFONCE_USE_BATCH=True
+# 可选：缓解假负例
+# export INFONCE_MASK_FAKE_NEGATIVE=True
+
+CUDA_VISIBLE_DEVICES=0,1,2,3 \
+NPROC_PER_NODE=4 \
+swift sft \
+  --model Qwen/Qwen3-VL-Embedding-2B \
+  --task_type embedding \
+  --train_type lora \
+  --dataset /path/to/train.jsonl \
+  --split_dataset_ratio 0.05 \
+  --torch_dtype bfloat16 \
+  --attn_impl flash_attn \
+  --num_train_epochs 1 \
+  --per_device_train_batch_size 4 \
+  --gradient_accumulation_steps 8 \
+  --learning_rate 1e-4 \
+  --lora_rank 16 \
+  --lora_alpha 32 \
+  --loss_type infonce \
+  --max_length 2048 \
+  --dataloader_drop_last true \
+  --deepspeed zero2 \
+  --output_dir output/qwen3vl-emb-2b-lora \
+  --save_steps 200 \
+  --eval_steps 200 \
+  --save_total_limit 3
+```
+
+纯文本 Qwen3-Embedding 时增加 `--model_type qwen3_emb`，并把 `--model` 换成对应文本权重。GME 可直接参考官方 `train_gme.sh`。
+
+#### Step 3：合并 LoRA 并做「真变化」自检
+
+```bash
+swift export \
+  --adapters output/qwen3vl-emb-2b-lora/checkpoint-xxx \
+  --merge_lora true \
+  --output_dir output/qwen3vl-emb-2b-merged
+```
+
+用同一批 query 比较 **基座 vs 合并后** 的向量余弦：若几乎恒为 1.0，多半是 **adapter 没加载/没合并成功**（ms-swift Issue 里常见坑），不要先怀疑数据。
+
+#### Step 4：评测闭环（比只看 train loss 重要）
+
+1. **业务集**：固定候选库，报 Recall@K / nDCG@K（与线上一致的指令模板）。  
+2. **回归集**：抽一小撮 MMEB / 通用检索子集，防止灾难性遗忘。  
+3. **文档场景**：另报 ViDoRe 或自建页级集；多向量模型用 colpali 评测脚本。
+
+### 6.5 备用快速路径（按场景）
+
+**A. 复现论文管线（VLM2Vec）**
+
+```bash
+git clone https://github.com/TIGER-AI-Lab/VLM2Vec.git
+cd VLM2Vec
+# 按 README 安装；训练脚本见 experiments/public/train
+# 数据：TIGER-Lab/MMEB-train + 自有 json 注册到 src/dataset/
+```
+
+适合：要 GradCache、多任务 instruction、和 MMEB 完全对齐时。
+
+**B. 视觉文档（ColQwen / ColPali）**
+
+```bash
+pip install "colpali-engine[train]"
+# 配置见仓库 scripts/configs/；多卡示例：
+accelerate launch --multi-gpu scripts/configs/qwen2/train_colqwen25_model.py
+```
+
+适合：PDF/PPT 页图检索，而不是通用 MMEB 全能嵌入。
+
+**C. 从聊天 MLLM「冷启动」成 Embedder**
+
+若不想从现成 Embedding 权重出发，可用 ms-swift：`--model <Qwen2.5-VL/Qwen3-VL-Instruct> --task_type embedding`，再 InfoNCE。代价是要比「已对齐的 Embedding 2B/8B 继续训」更吃数据与步数。
+
+### 6.6 后训练实操清单（建议打印）
+
+1. **先定任务**：文找图 / 图找文 / 融合 query / PDF 页检索——任务决定框架（ms-swift vs colpali）。  
+2. **先定基座**：通用多模态优先 Qwen3-VL-Embedding；文档优先 ColQwen。  
+3. **数据**：instruction 固定；正例准；难负例逐步加；剔除假负例。  
+4. **训练**：LoRA → 有效 batch（积充分步）→ `infonce` → 1 个 epoch 探路。  
+5. **验证**：合并权重后向量必须相对基座有偏移；业务集 + 回归集双看。  
+6. **上线**：需要维度压缩时再开 MRL/截断；召回不够再叠 Reranker，而不是无限加大 Embedding。
+
+### 6.7 常见坑
+
+| 现象 | 可能原因 | 处理 |
+|------|----------|------|
+| 训完召回几乎不变 | LoRA 未合并 / 推理未挂 adapter | `swift export --merge_lora true`；核对 key 前缀 |
+| Loss 很好、业务集崩 | 指令模板不一致；过拟合训练域 | 推理用同一 system/instruction；加通用数据混训 |
+| OOM | 图分辨率/视频帧 × batch | 降分辨率、降 `max_length`、升 grad accum、ZeRO-2/3 |
+| 负例越挖越差 | 假负例被当负例推远 | `INFONCE_MASK_FAKE_NEGATIVE` 或 Judge 过滤 |
+| 多模态涨、纯文本掉 | 对齐税 | 混入文本检索数据持续微调（MM-Embed 思路） |
+
+---
 
 
 
-### 6.1 当前关键挑战
+## 7. 趋势与展望
+
+
+
+### 7.1 当前关键挑战
 
 1. **推理鸿沟**：[MR²-Bench](https://arxivlens.com/paperview/details/mr-2-bench-going-beyond-matching-to-reasoning-in-multimodal-retrieval-4166-ffb0e88d) 揭示的表面匹配（MMEB ~77.8）与推理检索（~9.9）之间约 68pp 差距，仍是最紧迫问题；推理增强嵌入刚开始缩小缺口，远未「解决」。
 2. **模态指令不可靠**：[MMEB-V3 / OmniSET](https://arxiv.org/abs/2604.23321) 显示模型难以按指令约束目标模态，跨模态检索高度不对称。
@@ -1919,7 +2102,7 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 
 
 
-### 6.2 未来方向
+### 7.2 未来方向
 
 1. **推理增强且可部署**：[MMEmb-R1](https://arxiv.org/abs/2604.06156) 的自适应调用、[PLUME](https://arxiv.org/abs/2604.02073) 的潜在推理、[RIME](https://arxiv.org/abs/2604.22280) 的改写接口，比「永远生成长 CoT」更贴近线上。
 2. **生成式嵌入与判别式对齐**：CMA / 蒸馏 / Refine-RL 一类机制，让「想清楚」与「嵌得准」可互相检索、互为锚点。
@@ -1931,7 +2114,7 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 
 
 
-### 6.3 选型建议
+### 7.3 选型建议
 
 
 | 场景 | 推荐模型 | 理由 |
@@ -1948,9 +2131,9 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 
 ---
 
-## 7. 附录：两份原稿整合说明与新增文献
+## 8. 附录：两份原稿整合说明与新增文献
 
-### 7.1 整合策略
+### 8.1 整合策略
 
 | 原稿 | 角色 | 主要并入内容 |
 |------|------|--------------|
@@ -1959,7 +2142,7 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 
 现仅保留本文件为唯一报告。
 
-### 7.2 本次补充的新工作（相对原两稿）
+### 8.2 本次补充的新工作（相对原两稿）
 
 | 工作 | 时间/出处 | 为何值得关注 |
 |------|-----------|--------------|
@@ -1977,7 +2160,7 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 ---
 
 > **报告生成日期**：2026 年 7 月 5 日  
-> **修订**：2026-07-24（第 2–5 章扩写与算力对照）；**2026-08-01（两稿整合 + 推理增强/全模态新工作补充）**  
+> **修订**：2026-07-24（第 2–5 章扩写与算力对照）；2026-08-01（两稿整合 + 推理增强/全模态新工作）；**2026-08-01（新增第 6 章：开源训练框架与后训练上手）**  
 > **覆盖时段**：2025 年 1 月 – 2026 年 8 月  
 >
 > 本文基于公开研究文献整理；各工作名称已在正文中直接链接至论文 / 代码 / 官方页面。第 3 章各榜为公开论文/模型卡/榜单快照，**活榜会持续刷新**；请以 [MMEB Leaderboard](https://huggingface.co/spaces/TIGER-Lab/MMEB-Leaderboard)、[MTEB](https://huggingface.co/spaces/mteb/leaderboard)、[ViDoRe](https://mteb-leaderboard.hf.space/benchmark/ViDoRe(v3))、[MR²-Bench](https://github.com/VectorSpaceLab/MR2-Bench) 等官方页面为准。
