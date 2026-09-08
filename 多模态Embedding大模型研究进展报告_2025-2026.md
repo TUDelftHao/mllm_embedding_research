@@ -1,6 +1,6 @@
 # 多模态 Embedding 大模型研究进展报告（2025–2026）
 
-> 本报告系统梳理了 2025–2026 年间多模态 Embedding 大模型领域的研究进展。整合自两份既有文档（系统综述版 + 代表作深度解析版），并持续补充至 **2026 年 8 月中旬**的新工作（含工业级 DME、稠密+稀疏统一 UEmbed、视觉 token 压缩 Magic-MM、任务缩放 TSEmbed、检索反馈式 CoT 等）。第 2–5 章以技术阅读 blog 风格展开：数据集与评测、训练方法与代表模型；**第 6 章汇总开源训练框架/仓库与后训练上手路径**。文中各工作名称均直接链接至论文 / 代码 / 官方页面。
+> 本报告系统梳理了 2025–2026 年间多模态 Embedding 大模型领域的研究进展。整合自两份既有文档（系统综述版 + 代表作深度解析版），并持续补充至 **2026 年 9 月初**的新工作（含微信 WeMM-Embedding 开放权重登顶、DME、UEmbed、UMER 成对判别推理、CORE 组合性蒸馏、PUMA 事后稀疏化、NeoMME 单塔编码器等）。第 2–5 章以技术阅读 blog 风格展开：数据集与评测、训练方法与代表模型；**第 6 章汇总开源训练框架/仓库与后训练上手路径**。文中各工作名称均直接链接至论文 / 代码 / 官方页面。
 
 ---
 
@@ -25,11 +25,12 @@
 
 - **MLLM 成为主流骨干**：[Qwen3-VL](https://github.com/QwenLM/Qwen3-VL)、[LLaVA-OneVision](https://llava-vl.github.io/blog/2024-08-05-llava-onevision/) 等被广泛用作 Embedding 模型的基座
 - **从双编码器到深度融合**：[Gemini Embedding 2](https://arxiv.org/abs/2605.27295) 等模型实现了任意交错的跨模态输入；开源侧 [Omni-Embed-Nemotron](https://arxiv.org/abs/2510.03458) / [OmniRet](https://arxiv.org/abs/2603.02098) 推进文–图–音–视频统一
-- **工业「效率 × 细粒度」合流**：[DME](https://arxiv.org/abs/2608.02148)（抖音）用训练期潜在推理达到 MMEB-V2 **78.4**，推理仍接近普通对比编码器；[UEmbed](https://arxiv.org/abs/2608.02583) 一次前向同时产出稠密与稀疏向量
-- **训练 / 推理效率继续下沉**：合成数据、GradCache、[Magic-MM](https://arxiv.org/abs/2602.05275) 视觉 token 压缩、[Eddy-VL](https://arxiv.org/abs/2607.16316) 结构剪枝蒸馏、[ReLoop-UME](https://arxiv.org/abs/2607.28751) 深度循环复用
+- **工业「效率 × 细粒度」合流**：[WeMM-Embedding](https://arxiv.org/abs/2608.24053)（微信，开源 2B/4B/9B）把 MMEB-V2 总分推到 **80.6**；[DME](https://arxiv.org/abs/2608.02148)（抖音）用训练期潜在推理达到 **78.4**，推理仍接近普通对比编码器；[UEmbed](https://arxiv.org/abs/2608.02583) 一次前向同时产出稠密与稀疏向量
+- **训练 / 推理效率继续下沉**：合成数据、GradCache、[Magic-MM](https://arxiv.org/abs/2602.05275) 视觉 token 压缩、[Eddy-VL](https://arxiv.org/abs/2607.16316) 结构剪枝蒸馏、[ReLoop-UME](https://arxiv.org/abs/2607.28751) 深度循环复用、[PUMA](https://arxiv.org/abs/2608.25780) 事后稀疏化、[NeoMME](https://arxiv.org/abs/2609.01657) 从零训的小参数单塔编码器
 - **任务冲突与任务缩放**：[TSEmbed](https://arxiv.org/abs/2603.04772) 用 MoE-LoRA + Expert-Aware 难负例，把「多任务互相打架」显式拆开
 - **推理时扩展维度（MRL）**：Matryoshka 表示学习成为标配，支持灵活的嵌入维度
-- **推理能力成为新前沿**：[MR²-Bench](https://arxivlens.com/paperview/details/mr-2-bench-going-beyond-matching-to-reasoning-in-multimodal-retrieval-4166-ffb0e88d) 揭示匹配≠推理；[UME-R1](https://arxiv.org/abs/2511.00405) / [Embed-RL](https://arxiv.org/abs/2602.13823) / [MMEmb-R1](https://arxiv.org/abs/2604.06156) / [PLUME](https://arxiv.org/abs/2604.02073) / [RIME](https://arxiv.org/abs/2604.22280) / [UniME-R1](https://arxiv.org/abs/2608.06060)（检索反馈式 RC-CoT）等探索显式 / 潜在 / 改写 / 反馈式推理
+- **推理能力成为新前沿**：[MR²-Bench](https://arxivlens.com/paperview/details/mr-2-bench-going-beyond-matching-to-reasoning-in-multimodal-retrieval-4166-ffb0e88d) 揭示匹配≠推理；[UME-R1](https://arxiv.org/abs/2511.00405) / [Embed-RL](https://arxiv.org/abs/2602.13823) / [MMEmb-R1](https://arxiv.org/abs/2604.06156) / [PLUME](https://arxiv.org/abs/2604.02073) / [RIME](https://arxiv.org/abs/2604.22280) / [UniME-R1](https://arxiv.org/abs/2608.06060)（检索反馈式 RC-CoT）/ [UMER](https://arxiv.org/abs/2608.18504)（成对判别推理 + 嵌入–重排统一）等探索显式 / 潜在 / 改写 / 反馈 / 成对推理
+- **组合性回潮**：[CORE](https://arxiv.org/abs/2609.04083) 用五级匹配候选 + Rank-KL，把 reranker 的属性绑定判断蒸馏进双塔嵌入
 
 ---
 
@@ -447,23 +448,23 @@ MMEB-V3 把评测推进到「全模态 + Agent」。配套的 [OmniSET](https://
 
 **MMEB-V2 Top（Overall / All，公开对照快照）**
 
-> 来源综合：[Qwen3-VL-Embedding-8B 模型卡](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B)、[DME 技术报告](https://arxiv.org/abs/2608.02148)、[UEmbed](https://arxiv.org/abs/2608.02583) 与 [MMEB Leaderboard](https://huggingface.co/spaces/TIGER-Lab/MMEB-Leaderboard)（约 **2026-08** 核查）。分数为 **All（78 任务平均）**；活榜会继续漂移。工业私有数据模型与纯公开数据模型请分开读。
+> 来源综合：[WeMM-Embedding 技术报告](https://arxiv.org/abs/2608.24053)（论文快照约 **2026-08-24**）、[DME](https://arxiv.org/abs/2608.02148)、[Qwen3-VL-Embedding-8B 模型卡](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B)、[UEmbed](https://arxiv.org/abs/2608.02583) 与 [MMEB Leaderboard](https://huggingface.co/spaces/TIGER-Lab/MMEB-Leaderboard)（约 **2026-09** 抽查）。分数为 **All（78 任务平均）**；活榜会继续漂移。工业私有数据模型与纯公开数据模型请分开读。
 
 | 排名 | 模型 | Size | All | 备注 |
 |------|------|------|-----|------|
-| 1 | **[DME-9B](https://arxiv.org/abs/2608.02148)** | 9B | **78.4** | 抖音工业模型；训练期潜在推理，线上仍近对比编码器 |
-| 2 | [Qwen3-VL-Embedding-8B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B) | 8B | **77.8–77.9** | 开放权重综合标杆；Image≈80 / Video≈67 / VisDoc≈82 |
-| 3 | [Seed-1.6-embedding-1215](https://seed.bytedance.com/en/blog/built-on-seed1-6-flash-seed-1-6-embedding-launched) | — | 76.9 | 闭源/半开源 |
-| 4 | **[DME-2B](https://arxiv.org/abs/2608.02148)** | 2B | **74.8** | 同档 2B 很强；视频/VisDoc 尤其突出 |
-| 5 | WeMM-Embedding-8B | ~8.8B | 73.9 | 榜单高位开放权重 |
-| 6 | [IFM-TTE](https://huggingface.co/spaces/TIGER-Lab/MMEB-Leaderboard) / TTE 系 | 8B | ~73–74 | Think-Then-Embed |
-| 7 | [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) | 2B | 73.3–73.4 | 小模型高性价比开放权重 |
-| 8 | [UEmbed-9B](https://arxiv.org/abs/2608.02583)（dense） | 9B | **71.8** | 公开数据训练；同模型 sparse **71.0** |
-| 9 | [RzenEmbed](https://arxiv.org/abs/2510.27350) / MMEmb-R1-4B 等 | 4–8B | ~71–73 | 推理增强 / VisDoc 专项 |
-| 10 | [Ops-MM-embedding-v1](https://huggingface.co/OpenSearch-AI/Ops-MM-embedding-v1-7B) / [VLM2Vec-V2](https://huggingface.co/papers/2507.04590) | 2–8B | ~59–69 | 方法基线与长上下文对照 |
+| 1 | **[WeMM-Embedding-9B](https://arxiv.org/abs/2608.24053)** | 9B | **80.6** | 微信开源系列；Image 81.9 / Video 74.3 / VisDoc 83.3 |
+| 2 | **[WeMM-Embedding-4B](https://huggingface.co/tencent/WeMM-Embedding-4B)** | 4B | **79.2** | 已超过多数 8–9B 对照 |
+| 3 | **[DME-9B](https://arxiv.org/abs/2608.02148)** | 9B | **78.4** | 抖音工业模型；训练期潜在推理，线上仍近对比编码器。活榜另有 **DME-Large ≈80.2** |
+| 4 | **[WeMM-Embedding-2B](https://huggingface.co/tencent/WeMM-Embedding-2B)** | 2B | **77.9** | 2B 即超过此前 8B 开放权重标杆 |
+| 5 | [Qwen3-VL-Embedding-8B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B) | 8B | **77.8–77.9** | 仍是常用对照；Image≈80 / Video≈67 / VisDoc≈82 |
+| 6 | [Seed-1.6-embedding-1215](https://seed.bytedance.com/en/blog/built-on-seed1-6-flash-seed-1-6-embedding-launched) | — | 76.9 | 闭源/半开源 |
+| 7 | **[DME-2B](https://arxiv.org/abs/2608.02148)** | 2B | **74.8** | 同档 2B 很强；视频/VisDoc 尤其突出 |
+| 8 | [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) | 2B | 73.3–73.4 | 小模型高性价比开放权重（后训练常用基座） |
+| 9 | [UEmbed-9B](https://arxiv.org/abs/2608.02583)（dense） | 9B | **71.8** | 公开数据训练；同模型 sparse **71.0** |
+| 10 | [RzenEmbed](https://arxiv.org/abs/2510.27350) / TTE / 旧版 WeMM-8B 等 | 4–9B | ~71–74 | 方法基线或旧快照；勿与新 WeMM 系列混读 |
 
 **怎么读这个榜？**  
-总分高说明「通用匹配」强，但不自动等于：视频第一、文档第一、推理第一。看子任务表往往比看总分更有决策价值（例如视频看 [WAVE-7B](https://huggingface.co/tsinghua-ee/WAVE-7B) / DME，文档看 ColQwen / [Nemotron ColEmbed V2](https://arxiv.org/abs/2602.03992) / Argus）。**DME 用私有工业数据**，与 [UEmbed](https://arxiv.org/abs/2608.02583) 等「只训公开数据」路线不可直接横比「谁更强算法」。
+总分高说明「通用匹配」强，但不自动等于：视频第一、文档第一、推理第一。看子任务表往往比看总分更有决策价值（例如视频看 [WAVE-7B](https://huggingface.co/tsinghua-ee/WAVE-7B) / WeMM / DME，文档看 ColQwen / [Nemotron ColEmbed V2](https://arxiv.org/abs/2602.03992) / [NeoMME](https://arxiv.org/abs/2609.01657) / Argus）。**DME 用私有工业数据**，[WeMM](https://arxiv.org/abs/2608.24053) 亦含站内数据与合成，与 [UEmbed](https://arxiv.org/abs/2608.02583) 等「只训公开数据」路线不可直接横比「谁更强算法」。活榜上 **octen-vl-embedding-large** 等未发表技术报告的提交也会在 80 附近波动。
 
 ---
 
@@ -894,8 +895,9 @@ loss.backward()
 
 | 损失函数                                                                   | 它在优化什么                              | 什么时候用        | 代表工作                                                    |
 | ---------------------------------------------------------------------- | ----------------------------------- | ------------ | ------------------------------------------------------- |
-| **CoSENT**                                                             | 相似度分数的相对排序是否合理                      | STS（语义文本相似度） | [Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720)  |
-| **KL 散度**                                                              | 让学生分布贴近教师分布                         | 知识蒸馏、软标签对齐   | [UniME](https://dl.acm.org/doi/10.1145/3746027.3754845) |
+| **CoSENT**                                                             | 相似度分数的相对排序是否合理                      | STS、分级相关、reranker 监督 | [Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720) / [WeMM](https://arxiv.org/abs/2608.24053) |
+| **Rank-KL**                                                            | 让嵌入模型复现 reranker 的整表排序分布           | 组合性 / 细粒度检索蒸馏 | [CORE](https://arxiv.org/abs/2609.04083) |
+| **KL 散度**                                                              | 让学生分布贴近教师分布                         | 知识蒸馏、软标签对齐   | [UniME](https://dl.acm.org/doi/10.1145/3746027.3754845) / WeMM 跨尺度蒸馏 |
 | **Jensen-Shannon**                                                     | 更对称的分布对齐                            | 软匹配分数蒸馏      | [UniME-V2](https://arxiv.org/abs/2510.13515)            |
 | **Triplet**                                                            | anchor-positive 近、anchor-negative 远 | 早期排序模型       | 经典度量学习                                                  |
 | **Listwise**                                                           | 一整页候选列表的排序质量                        | 训练重排序器       | Reranker 阶段                                             |
@@ -1376,6 +1378,8 @@ def matryoshka_info_nce(
 
 - **[UniME](https://dl.acm.org/doi/10.1145/3746027.3754845) 阶段一**：教师是强文本嵌入模型 NV-Embed-v2。学生不必逐维模仿教师向量，而是让「batch 内相似度分布」用 KL 对齐——学会「谁和谁该像」。
 - **[Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720) 阶段三**：先把 Reranker（会细看 query-doc）的判断力，蒸馏回双塔/单向量 Embedding，让召回模型也变「眼尖」。
+- **[WeMM-Embedding](https://arxiv.org/abs/2608.24053) Stage-2**：9B 教师把 batch 内双向相似度分布蒸馏给 2B/4B；9B 自身则靠多配方变体 **model merging**。
+- **[CORE](https://arxiv.org/abs/2609.04083)**：同一骨干既当 reranker 又当 embedder，用 **Rank-KL** 把「属性绑对了没有」蒸馏进单向量空间。
 - **[xVLM2Vec](https://arxiv.org/abs/2503.09313)**：自蒸馏把单语能力迁到多语言，少依赖昂贵多语标注。
 
 **给初学者的比喻**：教师像资深面试官，不要求学员背面试官的笔记原文，而要求学员对同一批候选人的「相对排序」与面试官一致。
@@ -1446,7 +1450,7 @@ loss.backward()
 ### 5.1 [Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720)：工业级「统一多模态嵌入 + 重排」模板（阿里，2026.01）
 
 **它想解决什么**  
-开源界缺一个能同时覆盖图、文、视频、视觉文档，又带 Reranker、还能量化/截断维度的完整方案。Qwen3-VL-Embedding 基本按「能上线」的标准来做，发布即登顶 MMEB-V2（77.8）；至 2026.08，工业侧 [DME-9B](https://arxiv.org/abs/2608.02148) 报告 **78.4**，但开放权重综合标杆仍常以本系列为默认对照。
+开源界缺一个能同时覆盖图、文、视频、视觉文档，又带 Reranker、还能量化/截断维度的完整方案。Qwen3-VL-Embedding 基本按「能上线」的标准来做，发布即登顶 MMEB-V2（77.8）。至 2026.08–09，工业侧 [DME-9B](https://arxiv.org/abs/2608.02148) 报告 **78.4**，开放权重侧 [WeMM-Embedding-9B](https://arxiv.org/abs/2608.24053) 进一步报到 **80.6**（其 2B 已达 77.9，与本系列 8B 持平）。Qwen3-VL 系列仍是**后训练与方法对照的默认基座**（ms-swift / PUMA 等都挂在它上面），但「直接拿来当通用检索 SOTA」已让位给 WeMM 新系列。
 
 **架构怎么理解**  
 骨干是 Decoder-only 的 Qwen3-VL（2B / 8B）。输入走聊天模板（system + user），模型像平时多模态对话那样读图读文，但训练目标不是继续写 token，而是把**序列末尾** `<|endoftext|>` **的隐状态**当作 Embedding。  
@@ -1818,6 +1822,7 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 | **[RIME](https://arxiv.org/abs/2604.22280)** | — | 用检索友好的 **rewrite** 替代冗长 CoT | 腾讯微信视觉；CMA 对齐生成/判别空间 + Refine-RL |
 | **[DME](https://arxiv.org/abs/2608.02148)** Stage-2 | — | 训练期 Evidence-Grounded Typed Latent Reasoning + 交叉条件重建 | **线上不加 CoT**，却把细粒度判别灌进向量；工业可服务 |
 | **[UniME-R1](https://arxiv.org/abs/2608.06060)**（Learning from Failures） | — | Embedder–Adviser：对初检候选做 **Retrieval-Centric CoT** | 推理应回答「检索器搞混了什么」，而非只复述 query；可与旧版 [UME-R1](https://arxiv.org/abs/2511.00405) 区分 |
+| **[UMER](https://arxiv.org/abs/2608.18504)** | — | **Pair-Aware Discriminative Reasoning** + 同一 MLLM 同时学嵌入与重排 | 不再对 query/候选各自独白，而是比较「这对为什么匹配 / 差在哪」；推理预算可调 |
 | **[ReLoop-UME](https://arxiv.org/abs/2607.28751)** | — | 固定 token 工作区，沿深度循环复用检索形成层 | 用「深度计算」换「生成中间文本」；Learnable Retrieval Registers 累积证据 |
 
 **谱系直觉**
@@ -1827,11 +1832,12 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
     → 显式长 CoT（UME-R1 / TTE）
         → 检索对齐的 CoT / 自适应调用（Embed-RL / MMEmb-R1）
             → 检索反馈式 RC-CoT（UniME-R1, 2026.08）
+            → 成对判别推理 + 嵌入/重排统一（UMER, 2026.08）
             → 改写接口（RIME）或 潜在推理（PLUME / DME 训练期 latent）
             → 深度循环复用（ReLoop-UME）← 不扩 token、扩计算
 ```
 
-**读完带走**：推理增强已从「能不能想」进入「**想什么、何时想、要不要说出来、是否依赖检索反馈**」；部署侧优先关注自适应策略、训练期-only latent（DME）与 rewrite / depth-loop，而非无脑堆 CoT token。
+**读完带走**：推理增强已从「能不能想」进入「**想什么、何时想、要不要说出来、是否依赖检索反馈、是否成对比较**」；部署侧优先关注自适应策略、训练期-only latent（DME）、rewrite / depth-loop 与 UMER 的可调预算，而非无脑堆 CoT token。
 
 ---
 
@@ -1852,6 +1858,8 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 | [TSEmbed](https://arxiv.org/abs/2603.04772) | MLLM + MoE-LoRA | 专家解耦任务冲突 + EANS | 中 | 任务级缩放 |
 | [UEmbed](https://arxiv.org/abs/2608.02583) | Qwen3.5 2B/4B/9B | 稠密 + SPLADE 式稀疏同前向 | **高**（公开数据） | 解码器也能做多模态稀疏检索 |
 | [DME](https://arxiv.org/abs/2608.02148) | 工业骨干 2B/9B | 对比预训练 + 训练期 latent | **低**（工业） | MMEB-V2 **78.4**；线上近对比编码器 |
+| [WeMM-Embedding](https://arxiv.org/abs/2608.24053) | Qwen3.5 2B/4B/9B | last-token + MRL；分级相关 + 跨尺度蒸馏 | **中**（权重开源，语料含站内） | MMEB-V2 **80.6**；2B 已达 77.9 |
+| [UMER](https://arxiv.org/abs/2608.18504) | MLLM | 成对判别推理 + 嵌入/重排互蒸馏 | 中（方法公开） | 同一骨干可调预算地召回+精排 |
 | [MMEmb-R1](https://arxiv.org/abs/2604.06156) / [PLUME](https://arxiv.org/abs/2604.02073) / [UniME-R1](https://arxiv.org/abs/2608.06060) | Qwen3-VL 等 | 推理/潜在/反馈式 CoT + 对比 | 中（方法公开） | 把「中间计算」引入嵌入形成 |
 
 
@@ -1865,7 +1873,7 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 | 模型 | 链接 | 你可以从它身上学什么 |
 |------|------|----------------------|
 | **RzenEmbed-v2-7B** | [论文](https://arxiv.org/abs/2510.27350) · [代码](https://github.com/360CVGroup/RzenEmbed) | 视觉文档子任务可以专项打到很深 |
-| **WeMM-Embedding** | MMEB 榜 | 8B/2B 均居开放权重前列，选型时可与 Qwen3-VL-Embedding 对照 |
+| **WeMM-Embedding** | [论文](https://arxiv.org/abs/2608.24053) · [GitHub](https://github.com/Tencent/WeMM-Embedding) | **新系列 2B/4B/9B → 77.9 / 79.2 / 80.6**；旧榜 WeMM-8B（73.9）已过时 |
 | **seed-1.6-embedding** | [官方博客](https://seed.bytedance.com/en/blog/built-on-seed1-6-flash-seed-1-6-embedding-launched) | 图像子任务很强，但 MR² 提醒：匹配 ≠ 推理 |
 | **WAVE-7B** | [论文](https://arxiv.org/abs/2509.21990) · [模型](https://huggingface.co/tsinghua-ee/WAVE-7B) | 文本/音频/视频统一，视频榜常年参考 |
 | **[Nemotron ColEmbed V2](https://arxiv.org/abs/2602.03992)** | [HF 8B](https://huggingface.co/nvidia/nemotron-colembed-vl-8b-v2) | ViDoRe V3 开放权重榜首级 late interaction |
@@ -1873,6 +1881,10 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 | **[TSEmbed](https://arxiv.org/abs/2603.04772)** | MoE-LoRA + EANS | 用专家路由分布当相似度代理挖难负例 |
 | **[UEmbed](https://arxiv.org/abs/2608.02583)** | [GitHub](https://github.com/Alibaba-NLP/UEmbed) | 一次前向稠密+稀疏；公开数据训到 dense 71.8 / sparse 71.0 |
 | **[DME](https://arxiv.org/abs/2608.02148)** | 抖音技术报告 | 工业「训练期想、推理期不说」；2B/9B → 74.8/78.4 |
+| **[UMER](https://arxiv.org/abs/2608.18504)** | 成对判别推理 | 嵌入与重排同一 MLLM；推理预算可调 |
+| **[CORE](https://arxiv.org/abs/2609.04083)** | Rank-KL 蒸馏 | 组合性检索：把 reranker 的属性绑定判断灌进嵌入 |
+| **[PUMA](https://arxiv.org/abs/2608.25780)** | 事后稀疏自编码器 | 不重训骨干，存 8–16×、打分最高约 25× |
+| **[NeoMME](https://arxiv.org/abs/2609.01657)** | [HF](https://huggingface.co/collections/Hcompany/neomme) | 260M/800M 单塔双向编码器；ViDoRe v3 小参数档很强 |
 | **[ReLoop-UME](https://arxiv.org/abs/2607.28751)** | 深度循环 | 固定 token 预算下用循环深度换判别力 |
 | **[Eddy-VL 1.9B](https://arxiv.org/abs/2607.16316)** | 剪枝+分层蒸馏 | 边缘/离线取证场景；相对 2B 教师保留约 **91.7%** MMEB-V2 |
 | **[CMDR-Embed](https://arxiv.org/abs/2607.05927)** | 跨页上下文 | 文档检索从「单页」走向「多页共享上下文」 |
@@ -1888,7 +1900,7 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 
 ---
 
-### 5.15+ 2026 年 7–8 月关键增量（精读）
+### 5.15+ 2026 年 7–9 月关键增量（精读）
 
 #### [DME](https://arxiv.org/abs/2608.02148)：抖音多模态嵌入技术报告（2026.08）
 
@@ -1916,6 +1928,53 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 **成绩**：UEmbed-9B dense **71.8** / sparse **71.0**（MMEB-V2）；代码与权重见 [Alibaba-NLP/UEmbed](https://github.com/Alibaba-NLP/UEmbed)。  
 
 **读完带走**：多模态「混合检索」不必再挂一套跨模态稀疏模块；解码器也能原生出稀疏。
+
+#### [WeMM-Embedding](https://arxiv.org/abs/2608.24053)：微信通用多模态嵌入（2026.08，开源登顶）
+
+**定位**  
+腾讯微信视觉的 2B / 4B / 9B 系列，骨干 [Qwen3.5](https://github.com/QwenLM/Qwen3.5)，支持文本、图像、视频、视觉文档与任意交错输入；**不支持音频**。last-token 池化 + MRL（可截到 64–4096 维）。权重与推理代码：[Tencent/WeMM-Embedding](https://github.com/Tencent/WeMM-Embedding)（Apache 2.0）。
+
+**两阶段配方（比「再堆一对 InfoNCE」更值得抄）**  
+1. **大规模多任务对齐**：数亿级统一 pair 格式；标准对用 InfoNCE（带近重复 mask），分级相关用 **score-gap 加权 CoSENT**，全程 MRL。  
+2. **精炼集微调**：规模约是大规模集的 1/10。用 Semantic-ID（RQ-KMeans）重采样纠偏、MLLM 质检、挖硬负；再加 reranker 监督 + **9B→2B/4B 双向相似度蒸馏**。9B 没有更大教师，改为多配方变体再 **model merging**。
+
+**结果印象**：MMEB-V2 **2B=77.9 / 4B=79.2 / 9B=80.6**（Image/Video/VisDoc：81.9 / 74.3 / 83.3）。2B 已略超此前 8B 开放权重标杆 [Qwen3-VL-Embedding-8B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-8B)。微信站内 26 任务集与 14 组线上 A/B（视频号、公众号、朋友圈、电商等）有一致提升。
+
+**读完带走**：开放权重的「通用检索默认选项」已经从 Qwen3-VL-Embedding-8B 换成 **WeMM-9B**；2B 档若只看 MMEB 总分，甚至可以不再默认上 8B。后训练仍可继续拿 Qwen3-VL-Embedding 当基座——它的生态（ms-swift）更熟。
+
+#### [UMER](https://arxiv.org/abs/2608.18504)：成对判别推理，把嵌入和重排训在一起（2026.08）
+
+**问题**：已有 CoT 嵌入大多对 query / 候选**各自独白**，给不出「正例和难负例差在哪」；对比向量又扛不住需要核对答案、判类、细粒度推理的元任务。
+
+**做法**：Pair-Aware Discriminative Reasoning——直接比较 query–候选对，抽出指令相关的匹配证据与差异证据。同一 MLLM 同时学对比嵌入（粗召回）和判别重排（成对相关性）；两边再互蒸馏。推理预算可调：库很大时只跑嵌入，候选少时加上成对推理。
+
+**读完带走**：推理增强的下一问不是「再写更长 CoT」，而是「**证据是不是成对的、预算能不能按流量切**」。
+
+#### [CORE](https://arxiv.org/abs/2609.04083)：用 Rank-KL 把组合性从 reranker 蒸馏进嵌入（2026.09）
+
+**观察**：同一 MLLM 当交叉注意 reranker 时能分清「红杯子 vs 杯子是红的」这类绑定，但变成双塔嵌入后就糊。
+
+**做法**：合成覆盖五级组合匹配（全对 → 部分在场 → 属性错 / 物体错 → 完全不匹配）的候选表；比较对比学习、成对 CoSENT 与 **listwise Rank-KL**。Rank-KL 最能用上多级监督。CORE-RERANKER-8B 在 COLA / SUGARCREPE++ / NEGBENCH 总均 **82.7%**（相对 Jina-Reranker +10.7）；CORE-EMBED-8B 在所评嵌入里组合性最好，且迁到 MCMR 时 COCO / Flickr30K 不掉。
+
+**读完带走**：组合性不必另训一套骨干——**先让 reranker 当老师，再逼嵌入复现它的排序分布**。Winoground 一类低分，这条路比盲目加对比负例更对症。
+
+#### [PUMA](https://arxiv.org/abs/2608.25780)：事后稀疏化，不重训骨干（2026.08）
+
+通用多模态嵌入很稠、很贵。PUMA 用稀疏自编码器把现成向量映成紧凑稀疏码：先预训练保住稠密点积几何，再为检索微调稀疏编码器。挂在 [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) 上，五个文找图 / 组合检索基准里有四个与稠密打分统计上不可分或更好；存储约 **8–16×**（FP32），大候选池打分最高约 **25×**。失败模式：Top-K 支持不够、激活支持与检索不对齐。
+
+**读完带走**：线上要省存储，不一定要换模型；**先对现成 UME 做事后稀疏**往往更便宜。和 [UEmbed](https://arxiv.org/abs/2608.02583)「训练期原生稀疏」是两条互补路。
+
+#### [NeoMME](https://arxiv.org/abs/2609.01657)：不为生成而设计的单塔双向编码器（2026.09）
+
+ColPali 一类视觉文档检索，常把生成式 VLM 改成编码器，参数和算力都是「生成税」。NeoMME 从零训 **260M / 800M** 双向 Transformer：图补丁与多语文本进同一塔，掩码离散扩散目标，上下文 16K。检索微调同时出稠密头 + late-interaction 头。ViDoRe v3：**260M nDCG@10=0.523**（所评 <800M 最强）、**800M=0.556**；同分辨率下 260M 编码吞吐约 2× ColModernVBERT。层次池化 + 非对称量化可把多向量文档嵌入压约 **255×**，仍保留 >95% nDCG。Apache 2.0：[Hcompany/neomme](https://huggingface.co/collections/Hcompany/neomme)。
+
+**读完带走**：文档检索不一定要 2B+ MLLM；**专为编码而生的小单塔**在吞吐和存储上更像基础设施。
+
+#### 工业与垂直旁路（速记）
+
+- **[CAMIE](https://arxiv.org/abs/2608.30255)**（Snap DPA）：在 MLLM 骨干上用用户共互动 item 对做对称 InfoNCE，把内容嵌入拉向转化行为；线上 CTR/CVR 有实质提升。  
+- **[TraVEL](https://arxiv.org/abs/2608.13495)**：把 Qwen3-VL-Embedding 适配驾驶日志检索，用自车轨迹作为 GRPO 特权监督，专门打「左转 vs 右转」这类运动捷径。  
+- **[HMGCLIP](https://arxiv.org/abs/2608.24467)**：电商细粒度属性；异构超图挖结构感知难负，双粒度推理。
 
 #### [Magic-MM-Embedding](https://arxiv.org/abs/2602.05275)：视觉 token 压到 1/4 仍能涨分
 
@@ -1963,7 +2022,9 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 | [MuCo](https://arxiv.org/abs/2602.06393) | 同档 7B 多卡；有效 batch ×7，额外算力 ≤3% | 用训练组织换负例数 | 与同骨干 MLLM Embedding 类似 |
 | [Magic-MM](https://arxiv.org/abs/2602.05275) | 视觉 token≈1/4，显著降训推成本 | 三阶段补回压缩损失 | 同骨干下延迟/显存更友好 |
 | [UEmbed](https://arxiv.org/abs/2608.02583) | 公开数据 + LoRA；2B/4B/9B | 稠密+稀疏同前向 | 稀疏可走倒排，稠密走 ANN |
+| [WeMM-Embedding](https://arxiv.org/abs/2608.24053) | 工业级两阶段（规模未完全公开卡时） | 数亿对齐 + 精炼蒸馏 / 9B merging | 2B 即可打到原 8B 开放标杆；官方支持 HF / vLLM / SGLang |
 | [DME](https://arxiv.org/abs/2608.02148) | 工业未公开卡时 | Stage-2 latent 仅训练期 | 推理近标准对比编码器 |
+| [NeoMME](https://arxiv.org/abs/2609.01657) | 从零训 260M/800M | 掩码离散扩散 + 检索双头 | 文档页编码吞吐高于改 VLM 的 Col 系 |
 | [Eddy-VL](https://arxiv.org/abs/2607.16316) | 教师 2B → 学生 1.9B 蒸馏 | 剪 4 层 + 分层蒸馏 | 边缘/离线友好（~3.85GB bf16） |
 | [Jina CLIP v2](https://huggingface.co/jinaai/jina-clip-v2) | 双塔 ~0.9B，远低于 7B MLLM | 三阶段分辨率课程 | 消费级/中小 GPU 可服务 |
 | [CLIP](https://arxiv.org/abs/2103.00020) 原始预训练 | 大规模（数百 GPU 量级，历史配置） | batch 32768 | 推理很轻；预训练不可轻易复现 |
@@ -1981,12 +2042,12 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 
 遇到新的多模态 Embedding 工作，可以用六问快速「读透」：
 
-1. **范式**：双塔 / MLLM 适配 / 原生融合 / 多向量 / 稠密+稀疏 / 推理增强（显式·潜在·改写·反馈·深度循环）？
-2. **损失**：InfoNCE、SigLIP，还是任务混合 / RL 奖励 / 重建辅助？
-3. **数据**：真数据、合成、难负例、课程；**训练语料公开到什么程度**？（工业 DME vs 公开 UEmbed 不可盲比）
-4. **表示**：单向量还是多向量？是否 MRL/量化/稀疏？推理时要不要生成中间文本？
-5. **评测**：只看 MMEB 匹配，还是也看了 MR² / ViDoRe / CMDR / MVEB / 长上下文 / MMEB-V3 OmniSET？
-6. **效率**：相对基线的延迟、token 数、存储（尤其多向量、长 CoT、视觉 token 压缩）？
+1. **范式**：双塔 / MLLM 适配 / 原生融合 / 多向量 / 稠密+稀疏 / 事后稀疏 / 推理增强（显式·潜在·改写·反馈·成对·深度循环）？
+2. **损失**：InfoNCE、SigLIP，还是任务混合 / RL 奖励 / 重建辅助 / Rank-KL / 分级 CoSENT？
+3. **数据**：真数据、合成、难负例、课程；**训练语料公开到什么程度**？（工业 DME / WeMM vs 公开 UEmbed 不可盲比）
+4. **表示**：单向量还是多向量？是否 MRL/量化/稀疏？推理时要不要生成中间文本或成对比较？
+5. **评测**：只看 MMEB 匹配，还是也看了 MR² / ViDoRe / CMDR / MVEB / 组合性（CORE） / 长上下文 / MMEB-V3 OmniSET？
+6. **效率**：相对基线的延迟、token 数、存储（尤其多向量、长 CoT、视觉 token 压缩、事后稀疏）？
 
 把这六问答清，一篇方法文的主线通常就出来了。
 
@@ -2024,26 +2085,28 @@ MRL：1024→256（约 75% 压缩）时损失常 <1%。
 | [UME-R1](https://github.com/XMUDeepLIT/UME-R1) / [UniME-R1](https://arxiv.org/abs/2608.06060) | SFT+RL / Embedder–Adviser | 中 | 生成式 / 检索反馈式推理嵌入 |
 | [Embed-RL](https://github.com/ZoengHN/Embed-RL) | EG-RL 训练 | 中 | Reasoner–Embedder 解耦 |
 | [UEmbed](https://github.com/Alibaba-NLP/UEmbed) | 公开训练配方 + 权重 | **高** | 稠密+稀疏统一；公开数据复现友好 |
+| [WeMM-Embedding](https://github.com/Tencent/WeMM-Embedding) | 官方侧重推理/权重 | 中（站内+合成未完整公开） | **开放权重新标杆**；后训练仍可走 ms-swift |
 | [Qwen3-VL-Embedding](https://github.com/QwenLM/Qwen3-VL-Embedding) | 官方侧重推理/权重；**后训练推荐走 ms-swift** | 训练语料未完整公开 | 权重开源，配方可复用 |
 | [Nemotron ColEmbed V2](https://huggingface.co/nvidia/nemotron-colembed-vl-8b-v2) | 权重开源；训练细节见论文 | 中 | ViDoRe 向 late interaction 标杆 |
 | [GME](https://huggingface.co/Alibaba-NLP/gme-Qwen2-VL-7B-Instruct) | 可用 [ms-swift train_gme.sh](https://github.com/modelscope/ms-swift/blob/main/examples/train/embedding/train_gme.sh) | 中高 | 融合模态合成思路可借鉴 |
 | [MM-Embed](https://huggingface.co/nvidia/MM-Embed) | 权重开源，完整混合训练包未全公开 | 中 | 可参考模态感知难负例设计 |
 | [Omni-Embed-Nemotron](https://huggingface.co/nvidia/omni-embed-nemotron-3b) | **训练代码未公开** | 中高（数据列表有） | 只适合当权重基线，不适合抄训练 |
 | [DME](https://arxiv.org/abs/2608.02148) | **工业未开源权重** | 低 | 抄「训练期 latent、推理期对比」思路即可 |
+| [NeoMME](https://huggingface.co/collections/Hcompany/neomme) | 预训练骨干 + Retriever 权重 | **高** | 文档向小单塔；稠密+多向量同前向 |
 | ColPali / ColQwen | [illuin-tech/colpali](https://github.com/illuin-tech/colpali) | 中 | PDF/页级多向量后训练 |
 
 ### 6.3 怎么选框架（决策表）
 
 | 你的目标 | 推荐起点 | 基座权重建议 |
 |----------|----------|--------------|
-| 业务域多模态 RAG / 图文检索，尽快出效果 | **ms-swift** + InfoNCE + LoRA | [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B)（显存友好）或 8B |
+| 业务域多模态 RAG / 图文检索，尽快出效果 | **ms-swift** + InfoNCE + LoRA | 直接用 [WeMM-Embedding-2B/9B](https://github.com/Tencent/WeMM-Embedding) 作召回；若要继续后训练，[Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) 生态更熟 |
 | 对齐论文 / 刷 MMEB 子任务 | **VLM2Vec** | VLM2Vec-V2 或自选 Qwen2-VL/Qwen3-VL |
-| 纯 PDF / 扫描件检索 | **colpali-engine** | ColQwen2 / ColQwen3 / [Nemotron ColEmbed V2](https://huggingface.co/nvidia/nemotron-colembed-vl-8b-v2) |
-| 需要倒排 + 向量混合检索 | **UEmbed** 权重直用或仿其稀疏头 | [Alibaba-NLP/UEmbed](https://github.com/Alibaba-NLP/UEmbed) 2B/4B/9B |
+| 纯 PDF / 扫描件检索 | **colpali-engine** 或 NeoMME | ColQwen2 / ColQwen3 / [Nemotron ColEmbed V2](https://huggingface.co/nvidia/nemotron-colembed-vl-8b-v2) / [NeoMME-Retriever](https://huggingface.co/Hcompany/NeoMME-260M-Retriever) |
+| 需要倒排 + 向量混合检索 | **UEmbed** 权重直用或仿其稀疏头；已有稠密向量可试 [PUMA](https://arxiv.org/abs/2608.25780) | [Alibaba-NLP/UEmbed](https://github.com/Alibaba-NLP/UEmbed) 2B/4B/9B |
 | 只要文本检索后训练 | ms-swift（Qwen3-Embedding）或 FlagEmbedding / SBERT | Qwen3-Embedding-0.6B/4B |
 | 大规模离线图库双塔 | OpenCLIP / SigLIP 2 | SigLIP 2 So400m/g |
 | 边缘 / 离线部署 | 蒸馏小模型 | [Eddy-VL 1.9B](https://arxiv.org/abs/2607.16316) 思路或 2B + 量化 |
-| 研究推理增强嵌入 | UME-R1 / Embed-RL / UniME-R1 | 对应论文骨干 |
+| 研究推理增强嵌入 | UME-R1 / Embed-RL / UniME-R1 / UMER | 对应论文骨干 |
 
 ### 6.4 快速上手：用 ms-swift 后训练 Qwen3-VL-Embedding（推荐路径）
 
@@ -2161,7 +2224,7 @@ accelerate launch --multi-gpu scripts/configs/qwen2/train_colqwen25_model.py
 ### 6.6 后训练实操清单（建议打印）
 
 1. **先定任务**：文找图 / 图找文 / 融合 query / PDF 页检索——任务决定框架（ms-swift vs colpali）。  
-2. **先定基座**：通用多模态优先 Qwen3-VL-Embedding；文档优先 ColQwen。  
+2. **先定基座**：通用多模态优先 [WeMM-Embedding](https://github.com/Tencent/WeMM-Embedding)（要继续后训练则 Qwen3-VL-Embedding 更熟）；文档优先 ColQwen / NeoMME。  
 3. **数据**：instruction 固定；正例准；难负例逐步加；剔除假负例。  
 4. **训练**：LoRA → 有效 batch（积充分步）→ `infonce` → 1 个 epoch 探路。  
 5. **验证**：合并权重后向量必须相对基座有偏移；业务集 + 回归集双看。  
@@ -2189,25 +2252,26 @@ accelerate launch --multi-gpu scripts/configs/qwen2/train_colqwen25_model.py
 
 1. **推理鸿沟**：[MR²-Bench](https://arxivlens.com/paperview/details/mr-2-bench-going-beyond-matching-to-reasoning-in-multimodal-retrieval-4166-ffb0e88d) 揭示的表面匹配（MMEB ~77–78）与推理检索（~9.9）之间约 68pp 差距，仍是最紧迫问题；推理增强嵌入刚开始缩小缺口，远未「解决」。
 2. **模态指令不可靠**：[MMEB-V3 / OmniSET](https://arxiv.org/abs/2604.23321) 显示模型难以按指令约束目标模态，跨模态检索高度不对称。
-3. **组合性理解**：[Winoground](https://huggingface.co/datasets/facebook/winoground) 分数（30–40%）表明空间关系、属性绑定仍弱。
+3. **组合性理解**：[Winoground](https://huggingface.co/datasets/facebook/winoground) 分数（30–40%）表明空间关系、属性绑定仍弱；[CORE](https://arxiv.org/abs/2609.04083) 说明 reranker 已经会、嵌入还不会，缺口可以蒸馏。
 4. **实例身份 vs 语义匹配**：[MVEB](https://arxiv.org/abs/2608.01794) 表明通用 UME 不等于会做 VisID / Re-ID。
 5. **长上下文退化**：[MMLongEmbed](https://arxiv.org/abs/2606.14747) 发现上下文越长、性能越差的系统性衰变；文档侧 [CMDR](https://arxiv.org/abs/2607.05927) 进一步暴露跨页聚合缺口。
 6. **多模态对齐税**：增加模态支持通常伴随单一模态（尤其纯文本）性能下降。
-7. **存储与推理效率**：多向量（[ColPali](https://huggingface.co/vidore/colpali) / [Nemotron ColEmbed](https://arxiv.org/abs/2602.03992)）与长 CoT 生成式嵌入分别在存储与延迟上承压；[Magic-MM](https://arxiv.org/abs/2602.05275) token 压缩、[OmniRet](https://arxiv.org/abs/2603.02098) 重采样、[PLUME](https://arxiv.org/abs/2604.02073)/[DME](https://arxiv.org/abs/2608.02148) 潜在推理、[ReLoop-UME](https://arxiv.org/abs/2607.28751) 深度循环是几类对冲思路。
+7. **存储与推理效率**：多向量（[ColPali](https://huggingface.co/vidore/colpali) / [Nemotron ColEmbed](https://arxiv.org/abs/2602.03992)）与长 CoT 生成式嵌入分别在存储与延迟上承压；[Magic-MM](https://arxiv.org/abs/2602.05275) token 压缩、[OmniRet](https://arxiv.org/abs/2603.02098) 重采样、[PLUME](https://arxiv.org/abs/2604.02073)/[DME](https://arxiv.org/abs/2608.02148) 潜在推理、[ReLoop-UME](https://arxiv.org/abs/2607.28751) 深度循环、[PUMA](https://arxiv.org/abs/2608.25780) 事后稀疏、[NeoMME](https://arxiv.org/abs/2609.01657) 小单塔是几类对冲思路。
 
 
 
 ### 7.2 未来方向
 
-1. **推理增强且可部署**：[MMEmb-R1](https://arxiv.org/abs/2604.06156) 自适应调用、[PLUME](https://arxiv.org/abs/2604.02073) 潜在推理、[RIME](https://arxiv.org/abs/2604.22280) 改写、[DME](https://arxiv.org/abs/2608.02148) 训练期-only latent、[UniME-R1](https://arxiv.org/abs/2608.06060) 检索反馈式 RC-CoT，比「永远生成长 CoT」更贴近线上。
+1. **推理增强且可部署**：[MMEmb-R1](https://arxiv.org/abs/2604.06156) 自适应调用、[PLUME](https://arxiv.org/abs/2604.02073) 潜在推理、[RIME](https://arxiv.org/abs/2604.22280) 改写、[DME](https://arxiv.org/abs/2608.02148) 训练期-only latent、[UniME-R1](https://arxiv.org/abs/2608.06060) 检索反馈式 RC-CoT、[UMER](https://arxiv.org/abs/2608.18504) 成对判别 + 可调预算，比「永远生成长 CoT」更贴近线上。
 2. **生成式嵌入与判别式对齐**：CMA / 蒸馏 / Refine-RL / 交叉条件重建一类机制，让「想清楚」与「嵌得准」可互相检索、互为锚点。
-3. **稠密–稀疏统一与混合检索**：[UEmbed](https://arxiv.org/abs/2608.02583) 证明解码器可一次出两套表示，利于 Agent/RAG 栈简化。
-4. **全模态（omni）与 Agent 嵌入**：音频、工具检索、GUI、记忆检索（MMEB-V3）；[Omni-Embed-Nemotron](https://arxiv.org/abs/2510.03458) / [WAVE](https://arxiv.org/abs/2509.21990) / [OmniRet](https://arxiv.org/abs/2603.02098) 是开源参照。
+3. **稠密–稀疏统一与混合检索**：[UEmbed](https://arxiv.org/abs/2608.02583) 证明解码器可一次出两套表示；[PUMA](https://arxiv.org/abs/2608.25780) 证明已有稠密向量也能事后变稀疏。
+4. **全模态（omni）与 Agent 嵌入**：音频、工具检索、GUI、记忆检索（MMEB-V3）；[Omni-Embed-Nemotron](https://arxiv.org/abs/2510.03458) / [WAVE](https://arxiv.org/abs/2509.21990) / [OmniRet](https://arxiv.org/abs/2603.02098) 是开源参照。注意 [WeMM](https://arxiv.org/abs/2608.24053) **不含音频**。
 5. **任务缩放与冲突消解**：[TSEmbed](https://arxiv.org/abs/2603.04772) 的 MoE-LoRA + EANS 指向「加任务不必互相伤害」。
-6. **合成数据与挖负闭环**：[Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720)、[GME](https://arxiv.org/abs/2412.16855)、[PolyGen](https://arxiv.org/abs/2602.01370)、Magic-MM 的 Judge 精筛证明数据配方常比单纯堆参数更决定排名。
+6. **合成数据与挖负闭环**：[Qwen3-VL-Embedding](https://arxiv.org/abs/2601.04720)、[GME](https://arxiv.org/abs/2412.16855)、[PolyGen](https://arxiv.org/abs/2602.01370)、Magic-MM 的 Judge 精筛、WeMM 的 Semantic-ID 重采样证明数据配方常比单纯堆参数更决定排名。
 7. **原生深度融合**：[Gemini Embedding 2](https://arxiv.org/abs/2605.27295) 的早期融合仍是能力上限参考。
-8. **量化与压缩**：MRL + QAT，以及 [SMEC](https://aclanthology.org/2025.emnlp-main.1332/)、[CSR](https://icml.cc/virtual/2025/oral/47166)、[MIPIC](https://github.com/tmp0810/MIPIC)、视觉 token 压缩与边缘蒸馏（Eddy-VL）。
-9. **专业领域**：数学图、科学插图、化学结构、城市地理（[Geo-Embed](https://arxiv.org/abs/2608.03826)）等垂直多模态嵌入仍有明显空间。
+8. **量化与压缩**：MRL + QAT，以及 [SMEC](https://aclanthology.org/2025.emnlp-main.1332/)、[CSR](https://icml.cc/virtual/2025/oral/47166)、[MIPIC](https://github.com/tmp0810/MIPIC)、视觉 token 压缩、边缘蒸馏（Eddy-VL）、事后稀疏（PUMA）、文档多向量 255× 压缩（NeoMME）。
+9. **专业领域**：数学图、科学插图、化学结构、城市地理（[Geo-Embed](https://arxiv.org/abs/2608.03826)）、驾驶视频（[TraVEL](https://arxiv.org/abs/2608.13495)）、电商属性（[HMGCLIP](https://arxiv.org/abs/2608.24467)）等垂直多模态嵌入仍有明显空间。
+10. **组合性专项**：不要只靠 MMEB 总分；[CORE](https://arxiv.org/abs/2609.04083) 把 reranker 蒸馏当作组合性的可复制配方。
 
 
 
@@ -2216,17 +2280,18 @@ accelerate launch --multi-gpu scripts/configs/qwen2/train_colqwen25_model.py
 
 | 场景 | 推荐模型 | 理由 |
 |------|----------|------|
-| 通用多模态检索（开放权重） | [Qwen3-VL-Embedding-8B](https://arxiv.org/abs/2601.04720) | MMEB-V2 开放权重综合领先；30+ 语；MRL |
-| 工业上限 / 视频+文档极强 | [DME](https://arxiv.org/abs/2608.02148)（若可合作调用） | 报告 78.4；训练期 latent、线上可服务 |
-| 预算有限的高精度 | [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) / WeMM-Embedding-2B / DME-2B | 2B 档 VisDoc/Image 仍强 |
-| 文档/PDF 检索 | [Nemotron ColEmbed V2](https://arxiv.org/abs/2602.03992) / Ops-ColQwen3-4B / [Argus-9B](https://arxiv.org/abs/2606.04300) | ViDoRe 多向量路线 |
+| 通用多模态检索（开放权重） | [WeMM-Embedding-9B](https://arxiv.org/abs/2608.24053) | MMEB-V2 **80.6**；2B/4B 亦已很强；MRL |
+| 工业上限 / 视频+文档极强 | [DME](https://arxiv.org/abs/2608.02148)（若可合作调用） | 报告 78.4，活榜 DME-Large≈80.2；训练期 latent、线上可服务 |
+| 预算有限的高精度 | [WeMM-Embedding-2B](https://huggingface.co/tencent/WeMM-Embedding-2B) / [Qwen3-VL-Embedding-2B](https://huggingface.co/Qwen/Qwen3-VL-Embedding-2B) / DME-2B | WeMM-2B 总分已≈原 8B 标杆 |
+| 文档/PDF 检索 | [Nemotron ColEmbed V2](https://arxiv.org/abs/2602.03992) / [NeoMME](https://arxiv.org/abs/2609.01657) / Ops-ColQwen3-4B / [Argus-9B](https://arxiv.org/abs/2606.04300) | ViDoRe 多向量或小单塔 |
 | 跨页文档问答检索 | [CMDR-Embed](https://arxiv.org/abs/2607.05927) 思路 | 需要页间上下文时不要只用单页 Col 模型 |
-| 混合检索（稠密+稀疏） | [UEmbed](https://arxiv.org/abs/2608.02583) | 一次前向两套表示；公开数据可复现 |
-| 视频理解 | [WAVE-7B](https://arxiv.org/abs/2509.21990) / DME / Qwen3-VL-Embedding | 视频仍是普遍短板，优先专项或二次微调 |
-| 文/图/音/视频统一 | [Omni-Embed-Nemotron](https://huggingface.co/nvidia/omni-embed-nemotron-3b) / [OmniRet](https://arxiv.org/abs/2603.02098) | 开源全模态参照 |
-| 推理密集检索（研究） | [Embed-RL](https://arxiv.org/abs/2602.13823) / [MMEmb-R1](https://arxiv.org/abs/2604.06156) / [PLUME](https://arxiv.org/abs/2604.02073) / [UniME-R1](https://arxiv.org/abs/2608.06060) | 先评估延迟；部署侧看好 latent/自适应/反馈式 |
+| 混合检索（稠密+稀疏） | [UEmbed](https://arxiv.org/abs/2608.02583) / [PUMA](https://arxiv.org/abs/2608.25780) | 训练期原生稀疏 vs 事后稀疏 |
+| 视频理解 | [WAVE-7B](https://arxiv.org/abs/2509.21990) / WeMM / DME / Qwen3-VL-Embedding | 视频仍是普遍短板，优先专项或二次微调 |
+| 文/图/音/视频统一 | [Omni-Embed-Nemotron](https://huggingface.co/nvidia/omni-embed-nemotron-3b) / [OmniRet](https://arxiv.org/abs/2603.02098) | 开源全模态参照（WeMM 无音频） |
+| 推理密集检索（研究） | [Embed-RL](https://arxiv.org/abs/2602.13823) / [MMEmb-R1](https://arxiv.org/abs/2604.06156) / [PLUME](https://arxiv.org/abs/2604.02073) / [UniME-R1](https://arxiv.org/abs/2608.06060) / [UMER](https://arxiv.org/abs/2608.18504) | 先评估延迟；部署侧看好 latent/自适应/成对可调预算 |
+| 组合性 / 属性绑定 | [CORE](https://arxiv.org/abs/2609.04083) 思路 | 不要只看 MMEB 总分 |
 | 实例身份 / 同款检索 | VisID 微调 + [MVEB](https://arxiv.org/abs/2608.01794) 回归 | 不要只看 MMEB 总分 |
-| 边缘离线 | [Eddy-VL](https://arxiv.org/abs/2607.16316) 或 2B+量化 | 参数与延迟优先 |
+| 边缘离线 | [Eddy-VL](https://arxiv.org/abs/2607.16316) / [NeoMME-260M](https://huggingface.co/Hcompany/NeoMME-260M-Retriever) 或 2B+量化 | 参数与延迟优先 |
 | 多语言商用 API | [Gemini Embedding 2](https://arxiv.org/abs/2605.27295) | 闭源综合上限 |
 | 大规模离线索引 | [SigLIP 2](https://arxiv.org/abs/2502.14786) / [Jina CLIP v2](https://huggingface.co/jinaai/jina-clip-v2) | 双塔吞吐高、易 ANN |
 
@@ -2266,14 +2331,19 @@ accelerate launch --multi-gpu scripts/configs/qwen2/train_colqwen25_model.py
 | **[UEmbed](https://arxiv.org/abs/2608.02583)** | **2026.08** | 稠密+稀疏统一；公开数据可复现 |
 | **[MVEB / VisID](https://arxiv.org/abs/2608.01794)** | **2026.08** | 视觉身份专项基准 |
 | **[UniME-R1](https://arxiv.org/abs/2608.06060)** | **2026.08** | 检索反馈式 RC-CoT（Learning from Failures） |
+| **[WeMM-Embedding](https://arxiv.org/abs/2608.24053)** | **2026.08 / 微信** | 开源 2B/4B/9B；MMEB-V2 **80.6** |
+| **[UMER](https://arxiv.org/abs/2608.18504)** | **2026.08** | 成对判别推理 + 嵌入/重排统一 |
+| **[PUMA](https://arxiv.org/abs/2608.25780)** | **2026.08** | 事后稀疏化，不重训骨干 |
+| **[CORE](https://arxiv.org/abs/2609.04083)** | **2026.09** | Rank-KL 蒸馏组合性 |
+| **[NeoMME](https://arxiv.org/abs/2609.01657)** | **2026.09** | 从零训小单塔；ViDoRe 高吞吐 |
 
-> 检索截止约 **2026-08-12**。之后若有新的 MMEB 登顶开放模型，请以 [MMEB Leaderboard](https://huggingface.co/spaces/TIGER-Lab/MMEB-Leaderboard) 为准更新第 3 章表格。
+> 检索截止约 **2026-09-08**。之后若有新的 MMEB 登顶开放模型，请以 [MMEB Leaderboard](https://huggingface.co/spaces/TIGER-Lab/MMEB-Leaderboard) 为准更新第 3 章表格。
 
 ---
 
 > **报告生成日期**：2026 年 7 月 5 日  
-> **修订**：2026-07-24（第 2–5 章扩写与算力对照）；2026-08-01（两稿整合 + 推理增强/全模态新工作）；2026-08-01（新增第 6 章：开源训练框架与后训练上手）；**2026-08-12（补充 DME / UEmbed / Magic-MM / TSEmbed / ReLoop-UME / Eddy-VL / CMDR / MVEB / UniME-R1，并刷新 MMEB-V2 与选型表）**  
-> **覆盖时段**：2025 年 1 月 – 2026 年 8 月中旬  
+> **修订**：2026-07-24（第 2–5 章扩写与算力对照）；2026-08-01（两稿整合 + 推理增强/全模态新工作）；2026-08-01（新增第 6 章：开源训练框架与后训练上手）；2026-08-12（补充 DME / UEmbed / Magic-MM / TSEmbed / ReLoop-UME / Eddy-VL / CMDR / MVEB / UniME-R1，并刷新 MMEB-V2 与选型表）；**2026-09-08（补充 WeMM-Embedding / UMER / CORE / PUMA / NeoMME，并刷新 MMEB-V2 与选型表）**  
+> **覆盖时段**：2025 年 1 月 – 2026 年 9 月初  
 >
 > 本文基于公开研究文献整理；各工作名称已在正文中直接链接至论文 / 代码 / 官方页面。第 3 章各榜为公开论文/模型卡/榜单快照，**活榜会持续刷新**；请以 [MMEB Leaderboard](https://huggingface.co/spaces/TIGER-Lab/MMEB-Leaderboard)、[MTEB](https://huggingface.co/spaces/mteb/leaderboard)、[ViDoRe](https://mteb-leaderboard.hf.space/benchmark/ViDoRe(v3))、[MR²-Bench](https://github.com/VectorSpaceLab/MR2-Bench) 等官方页面为准。
 
